@@ -48,6 +48,10 @@ namespace orc {
     }
   }
 
+  void ColumnVectorBatch::clear() {
+    numElements = 0;
+  }
+
   uint64_t ColumnVectorBatch::getMemoryUsage() {
     return static_cast<uint64_t>(notNull.capacity() * sizeof(char));
   }
@@ -79,6 +83,10 @@ namespace orc {
     }
   }
 
+  void LongVectorBatch::clear() {
+    numElements = 0;
+  }
+
   uint64_t LongVectorBatch::getMemoryUsage() {
     return ColumnVectorBatch::getMemoryUsage() +
         static_cast<uint64_t>(data.capacity() * sizeof(int64_t));
@@ -105,6 +113,10 @@ namespace orc {
       ColumnVectorBatch::resize(cap);
       data.resize(cap);
     }
+  }
+
+  void DoubleVectorBatch::clear() {
+    numElements = 0;
   }
 
   uint64_t DoubleVectorBatch::getMemoryUsage() {
@@ -135,6 +147,10 @@ namespace orc {
       data.resize(cap);
       length.resize(cap);
     }
+  }
+
+  void StringVectorBatch::clear() {
+    numElements = 0;
   }
 
   uint64_t StringVectorBatch::getMemoryUsage() {
@@ -168,6 +184,13 @@ namespace orc {
 
   void StructVectorBatch::resize(uint64_t cap) {
     ColumnVectorBatch::resize(cap);
+  }
+
+  void StructVectorBatch::clear() {
+    for(size_t i=0; i < fields.size(); i++) {
+      fields[i]->clear();
+    }
+    numElements = 0;
   }
 
   uint64_t StructVectorBatch::getMemoryUsage() {
@@ -211,6 +234,11 @@ namespace orc {
     }
   }
 
+  void ListVectorBatch::clear() {
+    numElements = 0;
+    elements->clear();
+  }
+
   uint64_t ListVectorBatch::getMemoryUsage() {
     return ColumnVectorBatch::getMemoryUsage()
            + static_cast<uint64_t>(offsets.capacity() * sizeof(int64_t))
@@ -244,6 +272,12 @@ namespace orc {
       ColumnVectorBatch::resize(cap);
       offsets.resize(cap + 1);
     }
+  }
+
+  void MapVectorBatch::clear() {
+    keys->clear();
+    elements->clear();
+    numElements = 0;
   }
 
   uint64_t MapVectorBatch::getMemoryUsage() {
@@ -289,6 +323,13 @@ namespace orc {
       tags.resize(cap);
       offsets.resize(cap);
     }
+  }
+
+  void UnionVectorBatch::clear() {
+    for(size_t i=0; i < children.size(); i++) {
+      children[i]->clear();
+    }
+    numElements = 0;
   }
 
   uint64_t UnionVectorBatch::getMemoryUsage() {
@@ -338,6 +379,10 @@ namespace orc {
     }
   }
 
+  void Decimal64VectorBatch::clear() {
+    numElements = 0;
+  }
+
   uint64_t Decimal64VectorBatch::getMemoryUsage() {
     return ColumnVectorBatch::getMemoryUsage()
           + static_cast<uint64_t>(
@@ -370,6 +415,10 @@ namespace orc {
       values.resize(cap);
       readScales.resize(cap);
     }
+  }
+
+  void Decimal128VectorBatch::clear() {
+    numElements = 0;
   }
 
   uint64_t Decimal128VectorBatch::getMemoryUsage() {
@@ -429,6 +478,10 @@ namespace orc {
       data.resize(cap);
       nanoseconds.resize(cap);
     }
+  }
+
+  void TimestampVectorBatch::clear() {
+    numElements = 0;
   }
 
   uint64_t TimestampVectorBatch::getMemoryUsage() {
