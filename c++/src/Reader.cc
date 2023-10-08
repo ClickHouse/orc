@@ -1078,6 +1078,7 @@ namespace orc {
           isStripeNeeded = false;
         }
         if (!isStripeNeeded) {
+          std::cout << "current stripe " << currentStripe << " is not needed" << std::endl;
           // advance to next stripe when current stripe has no matching rows
           currentStripe += 1;
           currentRowInStripe = 0;
@@ -1128,6 +1129,9 @@ namespace orc {
       rowsToRead = computeBatchSize(rowsToRead, currentRowInStripe, rowsInCurrentStripe,
                                     footer->rowindexstride(), sargsApplier->getNextSkippedRows());
     }
+    std::cout << "current stripe:" << currentStripe
+              << ", current row in stripe:" << currentRowInStripe << ", rows to read:" << rowsToRead
+              << std::endl;
     data.numElements = rowsToRead;
     if (rowsToRead == 0) {
       markEndOfFile();

@@ -20,6 +20,7 @@
 
 #include <cassert>
 #include <sstream>
+#include <iostream>
 
 namespace orc {
 
@@ -35,18 +36,18 @@ namespace orc {
   }
 
   ExpressionTree::ExpressionTree(size_t leaf)
-      : mOperator(Operator::LEAF), mChildren(), mLeaf(leaf), mConstant(TruthValue::YES_NO_NULL) {
+      : mOperator(Operator::LEAF), mLeaf(leaf), mConstant(TruthValue::YES_NO_NULL) {
     // PASS
   }
 
   ExpressionTree::ExpressionTree(TruthValue constant)
-      : mOperator(Operator::CONSTANT), mChildren(), mLeaf(UNUSED_LEAF), mConstant(constant) {
+      : mOperator(Operator::CONSTANT), mLeaf(UNUSED_LEAF), mConstant(constant) {
     // PASS
   }
 
   ExpressionTree::ExpressionTree(const ExpressionTree& other)
       : mOperator(other.mOperator), mLeaf(other.mLeaf), mConstant(other.mConstant) {
-    for (TreeNode child : other.mChildren) {
+    for (const TreeNode& child : other.mChildren) {
       mChildren.emplace_back(std::make_shared<ExpressionTree>(*child));
     }
   }
@@ -64,7 +65,7 @@ namespace orc {
         const_cast<const ExpressionTree*>(this)->getChildren());
   }
 
-  const TreeNode ExpressionTree::getChild(size_t i) const {
+  const TreeNode & ExpressionTree::getChild(size_t i) const {
     return mChildren.at(i);
   }
 
