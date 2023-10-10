@@ -57,9 +57,9 @@ namespace orc {
 
     std::vector<TreeNode>& getChildren();
 
-    const TreeNode & getChild(size_t i) const;
+    const TreeNode& getChild(size_t i) const;
 
-    TreeNode getChild(size_t i);
+    TreeNode& getChild(size_t i);
 
     TruthValue getConstant() const;
 

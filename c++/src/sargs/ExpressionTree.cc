@@ -19,8 +19,8 @@
 #include "ExpressionTree.hh"
 
 #include <cassert>
-#include <sstream>
 #include <iostream>
+#include <sstream>
 
 namespace orc {
 
@@ -65,13 +65,12 @@ namespace orc {
         const_cast<const ExpressionTree*>(this)->getChildren());
   }
 
-  const TreeNode & ExpressionTree::getChild(size_t i) const {
+  const TreeNode& ExpressionTree::getChild(size_t i) const {
     return mChildren.at(i);
   }
 
-  TreeNode ExpressionTree::getChild(size_t i) {
-    return std::const_pointer_cast<ExpressionTree>(
-        const_cast<const ExpressionTree*>(this)->getChild(i));
+  TreeNode& ExpressionTree::getChild(size_t i) {
+    return mChildren.at(i);
   }
 
   TruthValue ExpressionTree::getConstant() const {
