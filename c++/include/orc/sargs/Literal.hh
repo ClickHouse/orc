@@ -78,22 +78,22 @@ namespace orc {
     /**
      * Create a literal of null value for a specific type
      */
-    Literal(PredicateDataType type);
+    explicit Literal(PredicateDataType type);
 
     /**
      * Create a literal of LONG type
      */
-    Literal(int64_t val);
+    explicit Literal(int64_t val);
 
     /**
      * Create a literal of FLOAT type
      */
-    Literal(double val);
+    explicit Literal(double val);
 
     /**
      * Create a literal of BOOLEAN type
      */
-    Literal(bool val);
+    explicit Literal(bool val);
 
     /**
      * Create a literal of DATE type
