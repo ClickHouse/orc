@@ -299,7 +299,7 @@ namespace orc {
     return *this;
   }
 
-  RowReaderOptions& RowReaderOptions::searchArgument(std::unique_ptr<SearchArgument> sargs) {
+  RowReaderOptions& RowReaderOptions::searchArgument(std::shared_ptr<SearchArgument> sargs) {
     privateBits_->sargs = std::move(sargs);
     return *this;
   }
