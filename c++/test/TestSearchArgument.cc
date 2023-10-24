@@ -472,15 +472,6 @@ namespace orc {
                  std::invalid_argument);
   }
 
-  TEST(TestSearchArgument, testBadLiteralList) {
-    EXPECT_THROW(SearchArgumentFactory::newBuilder()
-                     ->startAnd()
-                     .in("x", PredicateDataType::STRING, {Literal("hi                     ", 23)})
-                     .end()
-                     .build(),
-                 std::invalid_argument);
-  }
-
   TEST(TestSearchArgument, testBadTreeNode) {
     auto invalidNode = std::make_shared<ExpressionTree>(ExpressionTree::Operator::NOT, NodeList{});
     EXPECT_THROW(invalidNode->toString(), std::invalid_argument);

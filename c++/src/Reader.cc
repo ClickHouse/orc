@@ -1403,6 +1403,7 @@ namespace orc {
           computeBatchSize(rowsToRead, currentRowInStripe_, rowsInCurrentStripe_,
                            footer_->row_index_stride(), sargsApplier_->getNextSkippedRows());
     }
+
     data.numElements = rowsToRead;
     if (rowsToRead == 0) {
       markEndOfFile();
