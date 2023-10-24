@@ -308,7 +308,7 @@ namespace orc {
 
     // Perform BFS
     while (!nodes.empty()) {
-      TreeNode& node = nodes.front();
+      TreeNode node = nodes.front();
       nodes.pop_front();
 
       if (node->getOperator() == ExpressionTree::Operator::LEAF) {

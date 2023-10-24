@@ -43,10 +43,10 @@ namespace orc {
    public:
     enum class Operator { OR, AND, NOT, LEAF, CONSTANT };
 
-    ExpressionTree(Operator op);
+    explicit ExpressionTree(Operator op);
     ExpressionTree(Operator op, std::initializer_list<TreeNode> children);
-    ExpressionTree(size_t leaf);
-    ExpressionTree(TruthValue constant);
+    explicit ExpressionTree(size_t leaf);
+    explicit ExpressionTree(TruthValue constant);
 
     ExpressionTree(const ExpressionTree& other);
     ExpressionTree& operator=(const ExpressionTree&) = delete;
@@ -57,9 +57,9 @@ namespace orc {
 
     std::vector<TreeNode>& getChildren();
 
-    const TreeNode getChild(size_t i) const;
+    const TreeNode& getChild(size_t i) const;
 
-    TreeNode getChild(size_t i);
+    TreeNode& getChild(size_t i);
 
     TruthValue getConstant() const;
 

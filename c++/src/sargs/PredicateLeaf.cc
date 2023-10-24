@@ -118,9 +118,6 @@ namespace orc {
         break;
       case Operator::IN:
         validateColumn();
-        if (literals_.size() < 2) {
-          throw std::invalid_argument("At least two literals are required!");
-        }
         for (auto literal : literals_) {
           if (static_cast<int>(literal.getType()) != static_cast<int>(type_)) {
             throw std::invalid_argument("leaf and literal types do not match!");

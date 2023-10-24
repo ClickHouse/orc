@@ -19,6 +19,7 @@
 #include "ExpressionTree.hh"
 
 #include <cassert>
+#include <iostream>
 #include <sstream>
 
 namespace orc {
@@ -35,18 +36,18 @@ namespace orc {
   }
 
   ExpressionTree::ExpressionTree(size_t leaf)
-      : operator_(Operator::LEAF), children_(), leaf_(leaf), constant_(TruthValue::YES_NO_NULL) {
+      : operator_(Operator::LEAF), leaf_(leaf), constant_(TruthValue::YES_NO_NULL) {
     // PASS
   }
 
   ExpressionTree::ExpressionTree(TruthValue constant)
-      : operator_(Operator::CONSTANT), children_(), leaf_(UNUSED_LEAF), constant_(constant) {
+      : operator_(Operator::CONSTANT), leaf_(UNUSED_LEAF), constant_(constant) {
     // PASS
   }
 
   ExpressionTree::ExpressionTree(const ExpressionTree& other)
       : operator_(other.operator_), leaf_(other.leaf_), constant_(other.constant_) {
-    for (TreeNode child : other.children_) {
+    for (const TreeNode& child : other.children_) {
       children_.emplace_back(std::make_shared<ExpressionTree>(*child));
     }
   }
@@ -64,13 +65,12 @@ namespace orc {
         const_cast<const ExpressionTree*>(this)->getChildren());
   }
 
-  const TreeNode ExpressionTree::getChild(size_t i) const {
+  const TreeNode& ExpressionTree::getChild(size_t i) const {
     return children_.at(i);
   }
 
-  TreeNode ExpressionTree::getChild(size_t i) {
-    return std::const_pointer_cast<ExpressionTree>(
-        const_cast<const ExpressionTree*>(this)->getChild(i));
+  TreeNode& ExpressionTree::getChild(size_t i) {
+    return children_.at(i);
   }
 
   TruthValue ExpressionTree::getConstant() const {

@@ -248,7 +248,7 @@ namespace orc {
     /**
      * Set search argument for predicate push down
      */
-    RowReaderOptions& searchArgument(std::unique_ptr<SearchArgument> sargs);
+    RowReaderOptions& searchArgument(std::shared_ptr<SearchArgument> sargs);
 
     /**
      * Should enable encoding block mode

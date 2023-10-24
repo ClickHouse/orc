@@ -472,13 +472,4 @@ namespace orc {
                  std::invalid_argument);
   }
 
-  TEST(TestSearchArgument, testBadLiteralList) {
-    EXPECT_THROW(SearchArgumentFactory::newBuilder()
-                     ->startAnd()
-                     .in("x", PredicateDataType::STRING, {Literal("hi                     ", 23)})
-                     .end()
-                     .build(),
-                 std::invalid_argument);
-  }
-
 }  // namespace orc
