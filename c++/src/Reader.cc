@@ -197,12 +197,12 @@ namespace orc {
 
   void ColumnSelector::updateSelectedByFieldId(std::vector<bool>& selectedColumns,
                                                uint64_t fieldId) {
-    if (fieldId < contents->schema->getSubtypeCount()) {
-      selectChildren(selectedColumns, *contents->schema->getSubtype(fieldId));
+    if (fieldId <= contents->schema->getMaximumColumnId()) {
+      selectChildren(selectedColumns, *idTypeMap[fieldId]);
     } else {
       std::stringstream buffer;
       buffer << "Invalid column selected " << fieldId << " out of "
-             << contents->schema->getSubtypeCount();
+             << contents->schema->getMaximumColumnId();
       throw ParseError(buffer.str());
     }
   }
