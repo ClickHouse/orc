@@ -87,6 +87,21 @@ namespace orc {
     }
   }
 
+  void EncodedStringVectorBatch::calculateDataAndLength() {
+    if (calculated)
+        return;
+
+    size_t n = index.size();
+    resize(n);
+
+    for (size_t i = 0; i < n; ++i) {
+      if (!hasNulls || notNull[i]) {
+        dictionary->getValueByIndex(index[i], data[i], length[i]);
+      }
+    }
+    calculated = true;
+  }
+
   StringVectorBatch::StringVectorBatch(uint64_t _capacity, MemoryPool& pool)
       : ColumnVectorBatch(_capacity, pool),
         data(pool, _capacity),
