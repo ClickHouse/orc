@@ -33,6 +33,7 @@ namespace orc {
         notNull(pool, cap),
         hasNulls(false),
         isEncoded(false),
+        dictionaryDecoded(false),
         memoryPool(pool) {
     std::memset(notNull.data(), 1, capacity);
   }
@@ -60,6 +61,13 @@ namespace orc {
     return false;
   }
 
+  void ColumnVectorBatch::decodeDictionary() {
+    if (dictionaryDecoded) return;
+
+    decodeDictionaryImpl();
+    dictionaryDecoded = true;
+  }
+
   StringDictionary::StringDictionary(MemoryPool& pool)
       : dictionaryBlob(pool), dictionaryOffset(pool) {
     // PASS
@@ -84,6 +92,17 @@ namespace orc {
     if (capacity < cap) {
       StringVectorBatch::resize(cap);
       index.resize(cap);
+    }
+  }
+
+  void EncodedStringVectorBatch::decodeDictionaryImpl() {
+    size_t n = index.size();
+    resize(n);
+
+    for (size_t i = 0; i < n; ++i) {
+      if (!hasNulls || notNull[i]) {
+        dictionary->getValueByIndex(index[i], data[i], length[i]);
+      }
     }
   }
 
@@ -173,6 +192,12 @@ namespace orc {
     return false;
   }
 
+  void StructVectorBatch::decodeDictionaryImpl() {
+    for (const auto& field : fields) {
+      field->decodeDictionary();
+    }
+  }
+
   ListVectorBatch::ListVectorBatch(uint64_t cap, MemoryPool& pool)
       : ColumnVectorBatch(cap, pool), offsets(pool, cap + 1) {
     // PASS
@@ -208,6 +233,10 @@ namespace orc {
 
   bool ListVectorBatch::hasVariableLength() {
     return true;
+  }
+
+  void ListVectorBatch::decodeDictionaryImpl() {
+    elements->decodeDictionary();
   }
 
   MapVectorBatch::MapVectorBatch(uint64_t cap, MemoryPool& pool)
@@ -248,6 +277,16 @@ namespace orc {
 
   bool MapVectorBatch::hasVariableLength() {
     return true;
+  }
+
+  void MapVectorBatch::decodeDictionaryImpl() {
+    if (keys) {
+      keys->decodeDictionary();
+    }
+
+    if (elements) {
+      elements->decodeDictionary();
+    }
   }
 
   UnionVectorBatch::UnionVectorBatch(uint64_t cap, MemoryPool& pool)
@@ -306,6 +345,12 @@ namespace orc {
       }
     }
     return false;
+  }
+
+  void UnionVectorBatch::decodeDictionaryImpl() {
+    for (const auto& child : children) {
+      child->decodeDictionary();
+    }
   }
 
   Decimal64VectorBatch::Decimal64VectorBatch(uint64_t cap, MemoryPool& pool)
