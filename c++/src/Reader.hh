@@ -19,6 +19,7 @@
 #ifndef ORC_READER_IMPL_HH
 #define ORC_READER_IMPL_HH
 
+#include "io/Cache.hh"
 #include "orc/Exceptions.hh"
 #include "orc/Int128.hh"
 #include "orc/OrcFile.hh"
@@ -260,6 +261,10 @@ namespace orc {
     // footer
     proto::Footer* footer;
     uint64_t numberOfStripes;
+
+    // cached io ranges. only valid when preBuffer is invoked.
+    std::shared_ptr<ReadRangeCache> cachedSource;
+
     uint64_t getMemoryUse(int stripeIx, std::vector<bool>& selectedColumns);
 
     // internal methods
@@ -360,7 +365,7 @@ namespace orc {
       return contents->schema.get();
     }
 
-    InputStream* getStream() const override {
+    InputStream* getInputStream() const override {
       return contents->stream.get();
     }
 
@@ -374,6 +379,9 @@ namespace orc {
 
     std::map<uint32_t, BloomFilterIndex> getBloomFilters(
         uint32_t stripeIndex, const std::set<uint32_t>& included) const override;
+
+    void preBuffer(const std::vector<int>& stripes, const std::list<uint64_t>& include_types,
+                   const CacheOptions& options);
   };
 }  // namespace orc
 

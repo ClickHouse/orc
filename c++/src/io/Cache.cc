@@ -1,0 +1,53 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+#include "Cache.hh"
+
+#include <cassert>
+
+namespace orc {
+
+  std::vector<ReadRange> coalesceReadRanges(std::vector<ReadRange> ranges, int64_t hole_size_limit,
+                                            int64_t range_size_limit) {
+    assert(range_size_limit > hole_size_limit);
+
+    ReadRangeCombiner combiner{hole_size_limit, range_size_limit};
+    return combiner.coalesce(std::move(ranges));
+  }
+
+  void ReadRangeCache::cache(std::vector<ReadRange> ranges) {
+    ranges =
+        coalesceReadRanges(std::move(ranges), options.hole_size_limit, options.range_size_limit);
+
+    std::vector<RangeCacheEntry> new_entries = makeCacheEntries(ranges);
+    // Add new entries, themselves ordered by offset
+    if (entries.size() > 0) {
+      //   std::vector<RangeCacheEntry> merged(entries.size() + new_entries.size());
+      //   std::merge(entries.begin(), entries.end(), new_entries.begin(), new_entries.end(),
+      //  merged.begin());
+      //   entries = std::move(merged);
+      size_t old_size = entries.size();
+      entries.resize(old_size + new_entries.size());
+      for (size_t i = 0; i < new_entries.size(); ++i) {
+        entries[old_size + i] = std::move(new_entries[i]);
+      }
+    } else {
+      entries = std::move(new_entries);
+    }
+  }
+}  // namespace orc

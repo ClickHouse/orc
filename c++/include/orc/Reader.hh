@@ -610,7 +610,7 @@ namespace orc {
     /**
      * Get the input stream for the ORC file.
      */
-    virtual InputStream* getStream() const = 0;
+    virtual InputStream* getInputStream() const = 0;
   };
 
   /**
