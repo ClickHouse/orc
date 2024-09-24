@@ -360,7 +360,7 @@ namespace orc {
       return contents->schema.get();
     }
 
-    InputStream* getStream() const {
+    InputStream* getStream() const override {
       return contents->stream.get();
     }
 

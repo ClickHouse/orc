@@ -39,6 +39,7 @@ namespace orc {
   // classes that hold data members so we can maintain binary compatibility
   struct ReaderOptionsPrivate;
   struct RowReaderOptionsPrivate;
+  class InputStream;
 
   /**
    * Expose the reader metrics including the latency and
@@ -605,6 +606,11 @@ namespace orc {
      */
     virtual std::map<uint32_t, BloomFilterIndex> getBloomFilters(
         uint32_t stripeIndex, const std::set<uint32_t>& included) const = 0;
+
+    /**
+     * Get the input stream for the ORC file.
+     */
+    virtual InputStream* getStream() const = 0;
   };
 
   /**
@@ -657,6 +663,7 @@ namespace orc {
      * @param rowNumber the next row the reader should return
      */
     virtual void seekToRow(uint64_t rowNumber) = 0;
+
   };
 }  // namespace orc
 
