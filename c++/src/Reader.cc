@@ -1484,6 +1484,7 @@ namespace orc {
     column_selector.updateSelected(selected_columns, row_reader_options);
 
     std::vector<ReadRange> ranges;
+    ranges.reserve(include_types.size());
     for (auto stripe: stripes)
     {
         // get stripe information
@@ -1529,7 +1530,7 @@ namespace orc {
           offset += stream.length();
         }
 
-        cachedSource = std::make_shared<ReadRangeCache>(getInputStream(), options);
+        cachedSource = std::make_shared<ReadRangeCache>(getInputStream(), options, contents->pool);
         cachedSource->cache(std::move(ranges));
     }
   }

@@ -19,6 +19,7 @@
 #include "Cache.hh"
 
 #include <cassert>
+#include <format>
 
 namespace orc {
 
@@ -48,6 +49,26 @@ namespace orc {
       }
     } else {
       entries = std::move(new_entries);
+    }
+  }
+
+  InputStream::BufferPtr ReadRangeCache::read(const ReadRange& range) {
+    if (range.length == 0) {
+        return std::make_shared<InputStream::Buffer>(*memoryPool, 0);
+    }
+
+    const auto it = std::lower_bound(entries.begin(), entries.end(), range,
+                                     [](const RangeCacheEntry& entry, const ReadRange& range) {
+                                       return entry.range.offset + entry.range.length <
+                                              range.offset + range.length;
+                                     });
+
+    if (it != entries.end() && it->range.contains(range)) {
+      auto result = it->future.get();
+      if (!result) throw std::logic_error("Failed to read range from cache");
+      return result;
+    } else {
+      throw std::logic_error("Failed to find matching cache entry");
     }
   }
 }  // namespace orc

@@ -46,6 +46,9 @@ namespace orc {
     int64_t offset;
     int64_t length;
 
+    ReadRange() = default;
+    ReadRange(int64_t _offset, int64_t _length) : offset(_offset), length(_length) {}
+
     friend bool operator==(const ReadRange& left, const ReadRange& right) {
       return (left.offset == right.offset && left.length == right.length);
     }
@@ -146,11 +149,13 @@ namespace orc {
     using BufferPtr = InputStream::BufferPtr;
 
     ReadRange range;
-    std::future<BufferPtr> future;
+
+    // The result may be get multiple times, so we use shared_future instead of std::future
+    std::shared_future<BufferPtr> future;
 
     RangeCacheEntry() = default;
     RangeCacheEntry(const ReadRange& range_, std::future<BufferPtr> future_)
-        : range(range_), future(std::move(future_)) {}
+        : range(range_), future(std::move(future_).share()) {}
 
     friend bool operator<(const RangeCacheEntry& left, const RangeCacheEntry& right) {
       return left.range.offset < right.range.offset;
@@ -190,8 +195,8 @@ namespace orc {
     static constexpr int64_t kDefaultRangeSizeLimit = 32 * 1024 * 1024;
 
     /// Construct a read cache with given options
-    explicit ReadRangeCache(InputStream* _stream, CacheOptions _options)
-        : stream(_stream), options(std::move(_options)) {}
+    explicit ReadRangeCache(InputStream* _stream, CacheOptions _options, MemoryPool* _memoryPool)
+        : stream(_stream), options(std::move(_options)), memoryPool(_memoryPool) {}
 
     ~ReadRangeCache() = default;
 
@@ -202,7 +207,7 @@ namespace orc {
     void cache(std::vector<ReadRange> ranges);
 
     /// Read a range previously given to Cache().
-    std::shared_ptr<DataBuffer<char>> read(const ReadRange& range);
+    InputStream::BufferPtr read(const ReadRange& range);
 
    private:
     std::vector<RangeCacheEntry> makeCacheEntries(const std::vector<ReadRange>& ranges) {
@@ -219,6 +224,8 @@ namespace orc {
 
     // Ordered by offset (so as to find a matching region by binary search)
     std::vector<RangeCacheEntry> entries;
+
+    MemoryPool* memoryPool;
   };
 
 }  // namespace orc
