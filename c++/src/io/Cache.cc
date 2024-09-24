@@ -16,10 +16,9 @@
  * limitations under the License.
  */
 
-#include "Cache.hh"
-
 #include <cassert>
-#include <format>
+
+#include "Cache.hh"
 
 namespace orc {
 
@@ -38,10 +37,6 @@ namespace orc {
     std::vector<RangeCacheEntry> new_entries = makeCacheEntries(ranges);
     // Add new entries, themselves ordered by offset
     if (entries.size() > 0) {
-      //   std::vector<RangeCacheEntry> merged(entries.size() + new_entries.size());
-      //   std::merge(entries.begin(), entries.end(), new_entries.begin(), new_entries.end(),
-      //  merged.begin());
-      //   entries = std::move(merged);
       size_t old_size = entries.size();
       entries.resize(old_size + new_entries.size());
       for (size_t i = 0; i < new_entries.size(); ++i) {
@@ -65,10 +60,8 @@ namespace orc {
 
     if (it != entries.end() && it->range.contains(range)) {
       auto result = it->future.get();
-      if (!result) throw std::logic_error("Failed to read range from cache");
       return result;
-    } else {
-      throw std::logic_error("Failed to find matching cache entry");
     }
+    return nullptr;
   }
 }  // namespace orc

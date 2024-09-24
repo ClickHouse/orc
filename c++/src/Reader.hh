@@ -177,6 +177,8 @@ namespace orc {
     // match read and file types
     SchemaEvolution schemaEvolution;
 
+    std::shared_ptr<ReadRangeCache> cachedSource;
+
     // load stripe index if not done so
     void loadStripeIndex();
 
@@ -219,7 +221,8 @@ namespace orc {
      * @param contents of the file
      * @param options options for reading
      */
-    RowReaderImpl(std::shared_ptr<FileContents> contents, const RowReaderOptions& options);
+    RowReaderImpl(std::shared_ptr<FileContents> contents, const RowReaderOptions& options,
+                  std::shared_ptr<ReadRangeCache> cachedSource = {});
 
     // Select the columns from the options object
     const std::vector<bool> getSelectedColumns() const override;
@@ -245,6 +248,10 @@ namespace orc {
 
     const SchemaEvolution* getSchemaEvolution() const {
       return &schemaEvolution;
+    }
+
+    std::shared_ptr<ReadRangeCache> getCachedSource() const {
+      return cachedSource;
     }
   };
 

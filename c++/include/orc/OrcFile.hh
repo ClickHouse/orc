@@ -68,7 +68,8 @@ namespace orc {
      * @param length the number of bytes to read.
      * @return a future that will be set to the buffer when the read is complete.
      */
-    virtual std::future<BufferPtr> readAsync(uint64_t /*offset*/, uint64_t /*length*/) {
+    virtual std::future<BufferPtr> readAsync(uint64_t /*offset*/, uint64_t /*length*/,
+                                             MemoryPool& /*pool*/) {
       throw NotImplementedYet("readAsync not supported yet");
     }
 

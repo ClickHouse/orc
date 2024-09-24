@@ -247,7 +247,8 @@ namespace orc {
   }
 
   RowReaderImpl::RowReaderImpl(std::shared_ptr<FileContents> _contents,
-                               const RowReaderOptions& opts)
+                               const RowReaderOptions& opts,
+                               std::shared_ptr<ReadRangeCache> _cachedSource)
       : localTimezone(getLocalTimezone()),
         contents(_contents),
         throwOnHive11DecimalOverflow(opts.getThrowOnHive11DecimalOverflow()),
@@ -256,7 +257,8 @@ namespace orc {
         firstRowOfStripe(*contents->pool, 0),
         enableEncodedBlock(opts.getEnableLazyDecoding()),
         readerTimezone(getTimezoneByName(opts.getTimezoneName())),
-        schemaEvolution(opts.getReadType(), contents->schema.get()) {
+        schemaEvolution(opts.getReadType(), contents->schema.get()),
+        cachedSource(std::move(_cachedSource)) {
     uint64_t numberOfStripes;
     numberOfStripes = static_cast<uint64_t>(footer->stripes_size());
     currentStripe = numberOfStripes;
