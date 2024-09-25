@@ -364,7 +364,7 @@ namespace orc {
       return contents->blockSize;
     }
 
-    const proto::Footer* getFooter() const {
+    const proto::Footer* getFooter() const override {
       return contents->footer.get();
     }
 
@@ -374,6 +374,10 @@ namespace orc {
 
     InputStream* getInputStream() const override {
       return contents->stream.get();
+    }
+
+    const proto::Metadata* getMetadata() const override {
+      return contents->metadata.get();
     }
 
     uint64_t getMemoryUse(int stripeIx = -1) override;

@@ -17,13 +17,14 @@
  */
 
 #include <cassert>
+#include <iostream>
 
 #include "Cache.hh"
 
 namespace orc {
 
-  std::vector<ReadRange> coalesceReadRanges(std::vector<ReadRange> ranges, int64_t hole_size_limit,
-                                            int64_t range_size_limit) {
+  std::vector<ReadRange> coalesceReadRanges(std::vector<ReadRange> ranges, uint64_t hole_size_limit,
+                                            uint64_t range_size_limit) {
     assert(range_size_limit > hole_size_limit);
 
     ReadRangeCombiner combiner{hole_size_limit, range_size_limit};
@@ -47,9 +48,9 @@ namespace orc {
     }
   }
 
-  InputStream::BufferPtr ReadRangeCache::read(const ReadRange& range) {
+  InputStream::BufferSlice ReadRangeCache::read(const ReadRange& range) {
     if (range.length == 0) {
-        return std::make_shared<InputStream::Buffer>(*memoryPool, 0);
+      return {std::make_shared<InputStream::Buffer>(*memoryPool, 0), 0, 0};
     }
 
     const auto it = std::lower_bound(entries.begin(), entries.end(), range,
@@ -58,10 +59,13 @@ namespace orc {
                                               range.offset + range.length;
                                      });
 
-    if (it != entries.end() && it->range.contains(range)) {
-      auto result = it->future.get();
-      return result;
+    if (it == entries.end() || !it->range.contains(range)) {
+      return {};
     }
-    return nullptr;
+
+    std::cout << "get buffer range offset:" << range.offset << " length:" << range.length
+              << " cached:" << (it->future.valid() ? "yes" : "no") << std::endl;
+    auto buffer = it->future.get();
+    return {buffer, range.offset - it->range.offset, range.length};
   }
 }  // namespace orc

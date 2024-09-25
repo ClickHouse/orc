@@ -840,7 +840,7 @@ namespace orc {
       // load stripe statistics for PPD
       readMetadata();
     }
-    return std::make_unique<RowReaderImpl>(contents, opts);
+    return std::make_unique<RowReaderImpl>(contents, opts, cachedSource);
   }
 
   uint64_t maxStreamsForType(const proto::Type& type) {
@@ -1532,7 +1532,10 @@ namespace orc {
           offset += stream.length();
         }
 
-        cachedSource = std::make_shared<ReadRangeCache>(getInputStream(), options, contents->pool);
+        if (!cachedSource)
+          cachedSource =
+              std::make_shared<ReadRangeCache>(getInputStream(), options, contents->pool);
+
         cachedSource->cache(std::move(ranges));
     }
   }

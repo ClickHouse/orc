@@ -99,20 +99,25 @@ namespace orc {
           throw ParseError(msg.str());
         }
 
-        ReadRange range{static_cast<int64_t>(offset), static_cast<int64_t>(streamLength)};
-        InputStream::BufferPtr buffer;
+        InputStream::BufferSlice slice;
         if (cachedSource) {
-          buffer = cachedSource->read(range);
+          ReadRange range{offset, streamLength};
+          slice = cachedSource->read(range);
         }
 
+        uint64_t myBlock = shouldStream ? input.getNaturalReadSize() : streamLength;
         std::unique_ptr<SeekableInputStream> seekableInput;
-        if (buffer) {
-          seekableInput =
-              std::make_unique<SeekableArrayInputStream>(buffer->data(), buffer->size());
+        std::cout << "stream columnid:" << columnId << " kind:" << kind << " offset:" << offset
+                  << " streamLength:" << streamLength;
+        if (slice.buffer) {
+          seekableInput = std::make_unique<SeekableArrayInputStream>(
+              slice.buffer->data() + slice.offset, slice.length);
+          std::cout << " was prefetched with size:" << slice.length << std::endl;
         } else {
-          uint64_t myBlock = shouldStream ? input.getNaturalReadSize() : streamLength;
           seekableInput = std::make_unique<SeekableFileInputStream>(&input, offset, streamLength,
-                                                                     *pool, myBlock);
+                                                                    *pool, myBlock);
+
+          std::cout << " not prefetched" << std::endl;
         }
         return createDecompressor(reader.getCompression(), std::move(seekableInput),
                                   reader.getCompressionSize(), *pool,

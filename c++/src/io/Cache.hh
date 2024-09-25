@@ -34,20 +34,20 @@ namespace orc {
   struct CacheOptions {
     /// The maximum distance in bytes between two consecutive
     /// ranges; beyond this value, ranges are not combined
-    int64_t hole_size_limit;
+    uint64_t hole_size_limit;
 
     /// The maximum size in bytes of a combined range; if
     /// combining two consecutive ranges would produce a range of a
     /// size greater than this, they are not combined
-    int64_t range_size_limit;
+    uint64_t range_size_limit;
   };
 
   struct ReadRange {
-    int64_t offset;
-    int64_t length;
+    uint64_t offset;
+    uint64_t length;
 
     ReadRange() = default;
-    ReadRange(int64_t _offset, int64_t _length) : offset(_offset), length(_length) {}
+    ReadRange(uint64_t _offset, uint64_t _length) : offset(_offset), length(_length) {}
 
     friend bool operator==(const ReadRange& left, const ReadRange& right) {
       return (left.offset == right.offset && left.length == right.length);
@@ -102,12 +102,12 @@ namespace orc {
       assert(itr <= ranges.end());
       // Start of the current coalesced range and end (exclusive) of previous range.
       // Both are initialized with the start of first range which is a placeholder value.
-      int64_t coalesced_start = itr->offset;
-      int64_t prev_range_end = coalesced_start;
+      uint64_t coalesced_start = itr->offset;
+      uint64_t prev_range_end = coalesced_start;
 
       for (; itr < ranges.end(); ++itr) {
-        const int64_t current_range_start = itr->offset;
-        const int64_t current_range_end = current_range_start + itr->length;
+        const uint64_t current_range_start = itr->offset;
+        const uint64_t current_range_end = current_range_start + itr->length;
         // We don't expect to have 0 sized ranges.
         assert(current_range_start < current_range_end);
 
@@ -141,8 +141,8 @@ namespace orc {
       return coalesced;
     }
 
-    const int64_t hole_size_limit;
-    const int64_t range_size_limit;
+    const uint64_t hole_size_limit;
+    const uint64_t range_size_limit;
   };
 
   struct RangeCacheEntry {
@@ -163,8 +163,8 @@ namespace orc {
   };
 
   static std::vector<ReadRange> coalesceReadRanges(std::vector<ReadRange> ranges,
-                                                   int64_t hole_size_limit,
-                                                   int64_t range_size_limit);
+                                                   uint64_t hole_size_limit,
+                                                   uint64_t range_size_limit);
 
   /// A read cache designed to hide IO latencies when reading.
   ///
@@ -191,9 +191,6 @@ namespace orc {
   ///    benefit from coalescing and parallel fetching.
   class ReadRangeCache {
    public:
-    static constexpr int64_t kDefaultHoleSizeLimit = 8192;
-    static constexpr int64_t kDefaultRangeSizeLimit = 32 * 1024 * 1024;
-
     /// Construct a read cache with given options
     explicit ReadRangeCache(InputStream* _stream, CacheOptions _options, MemoryPool* _memoryPool)
         : stream(_stream), options(std::move(_options)), memoryPool(_memoryPool) {}
@@ -207,7 +204,7 @@ namespace orc {
     void cache(std::vector<ReadRange> ranges);
 
     /// Read a range previously given to Cache().
-    InputStream::BufferPtr read(const ReadRange& range);
+    InputStream::BufferSlice read(const ReadRange& range);
 
    private:
     std::vector<RangeCacheEntry> makeCacheEntries(const std::vector<ReadRange>& ranges) {
