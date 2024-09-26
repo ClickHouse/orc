@@ -632,6 +632,8 @@ namespace orc {
     virtual void preBuffer(const std::vector<int>& stripes,
                            const std::list<uint64_t>& include_types,
                            const CacheOptions& options) = 0;
+
+    virtual void releaseBuffer(uint64_t boundary) = 0;
   };
 
   /**
