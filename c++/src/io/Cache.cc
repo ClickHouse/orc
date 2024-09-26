@@ -63,9 +63,19 @@ namespace orc {
       return {};
     }
 
-    std::cout << "get buffer range offset:" << range.offset << " length:" << range.length
-              << " cached:" << (it->future.valid() ? "yes" : "no") << std::endl;
+    // std::cout << "get buffer range offset:" << range.offset << " length:" << range.length
+            //   << " cached:" << (it->future.valid() ? "yes" : "no") << std::endl;
     auto buffer = it->future.get();
     return {buffer, range.offset - it->range.offset, range.length};
+  }
+
+  void ReadRangeCache::evictEntriesBefore(uint64_t boundary) {
+    size_t old_size = entries.size();
+    auto it = std::lower_bound(entries.begin(), entries.end(), boundary,
+                               [](const RangeCacheEntry& entry, uint64_t offset) {
+                                 return entry.range.offset + entry.range.length < offset;
+                               });
+    entries.erase(entries.begin(), it);
+    // std::cout << "entries: " << old_size << " evicted: " << old_size - entries.size() << std::endl;
   }
 }  // namespace orc

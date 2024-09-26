@@ -206,6 +206,9 @@ namespace orc {
     /// Read a range previously given to Cache().
     InputStream::BufferSlice read(const ReadRange& range);
 
+    /// Evict cache entries with its range before given boundary.
+    void evictEntriesBefore(uint64_t boundary);
+
    private:
     std::vector<RangeCacheEntry> makeCacheEntries(const std::vector<ReadRange>& ranges) {
       std::vector<RangeCacheEntry> new_entries;

@@ -1472,6 +1472,13 @@ namespace orc {
     return ret;
   }
 
+  void ReaderImpl::releaseBuffer(uint64_t boundary) {
+    if (cachedSource) {
+      cachedSource->evictEntriesBefore(boundary);
+    }
+  }
+
+
   void ReaderImpl::preBuffer(const std::vector<int>& stripes,
                              const std::list<uint64_t>& include_types,
                              const CacheOptions& options) {

@@ -392,7 +392,9 @@ namespace orc {
         uint32_t stripeIndex, const std::set<uint32_t>& included) const override;
 
     void preBuffer(const std::vector<int>& stripes, const std::list<uint64_t>& include_types,
-                   const CacheOptions& options);
+                   const CacheOptions& options) override;
+
+    void releaseBuffer(uint64_t boundary) override;
   };
 }  // namespace orc
 

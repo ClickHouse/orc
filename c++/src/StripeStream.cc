@@ -107,17 +107,17 @@ namespace orc {
 
         uint64_t myBlock = shouldStream ? input.getNaturalReadSize() : streamLength;
         std::unique_ptr<SeekableInputStream> seekableInput;
-        std::cout << "stream columnid:" << columnId << " kind:" << kind << " offset:" << offset
-                  << " streamLength:" << streamLength;
+        // std::cout << "stream columnid:" << columnId << " kind:" << kind << " offset:" << offset
+                //   << " streamLength:" << streamLength;
         if (slice.buffer) {
           seekableInput = std::make_unique<SeekableArrayInputStream>(
               slice.buffer->data() + slice.offset, slice.length);
-          std::cout << " was prefetched with size:" << slice.length << std::endl;
+        //   std::cout << " was prefetched with size:" << slice.length << std::endl;
         } else {
           seekableInput = std::make_unique<SeekableFileInputStream>(&input, offset, streamLength,
                                                                     *pool, myBlock);
 
-          std::cout << " not prefetched" << std::endl;
+        //   std::cout << " not prefetched" << std::endl;
         }
         return createDecompressor(reader.getCompression(), std::move(seekableInput),
                                   reader.getCompressionSize(), *pool,

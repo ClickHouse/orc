@@ -86,9 +86,11 @@ namespace orc {
         (buf + i - 1)->~T();
       }
     } else if (newSize > currentSize) {
+      /*
       for (uint64_t i = currentSize; i < newSize; ++i) {
         new (buf + i) T();
       }
+      */
     }
     currentSize = newSize;
   }
@@ -120,9 +122,11 @@ namespace orc {
   template <>
   void DataBuffer<char>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, newSize - currentSize);
     }
+    */
     currentSize = newSize;
   }
 
@@ -138,9 +142,11 @@ namespace orc {
   template <>
   void DataBuffer<char*>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(char*));
     }
+    */
     currentSize = newSize;
   }
 
@@ -156,9 +162,11 @@ namespace orc {
   template <>
   void DataBuffer<double>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(double));
     }
+    */
     currentSize = newSize;
   }
 
@@ -174,9 +182,11 @@ namespace orc {
   template <>
   void DataBuffer<float>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(float));
     }
+    */
     currentSize = newSize;
   }
 
@@ -192,9 +202,11 @@ namespace orc {
   template <>
   void DataBuffer<int64_t>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(int64_t));
     }
+    */
     currentSize = newSize;
   }
 
@@ -210,9 +222,11 @@ namespace orc {
   template <>
   void DataBuffer<int32_t>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(int32_t));
     }
+    */
     currentSize = newSize;
   }
 
@@ -228,9 +242,11 @@ namespace orc {
   template <>
   void DataBuffer<int16_t>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(int16_t));
     }
+    */
     currentSize = newSize;
   }
 
@@ -246,9 +262,11 @@ namespace orc {
   template <>
   void DataBuffer<int8_t>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(int8_t));
     }
+    */
     currentSize = newSize;
   }
 
@@ -264,9 +282,11 @@ namespace orc {
   template <>
   void DataBuffer<uint64_t>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, (newSize - currentSize) * sizeof(uint64_t));
     }
+    */
     currentSize = newSize;
   }
 
@@ -282,9 +302,11 @@ namespace orc {
   template <>
   void DataBuffer<unsigned char>::resize(uint64_t newSize) {
     reserve(newSize);
+    /*
     if (newSize > currentSize) {
       memset(buf + currentSize, 0, newSize - currentSize);
     }
+    */
     currentSize = newSize;
   }
 
