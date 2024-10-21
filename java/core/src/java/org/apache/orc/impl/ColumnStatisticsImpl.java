@@ -52,11 +52,9 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
     if (this == o) {
       return true;
     }
-    if (!(o instanceof ColumnStatisticsImpl)) {
+    if (!(o instanceof ColumnStatisticsImpl that)) {
       return false;
     }
-
-    ColumnStatisticsImpl that = (ColumnStatisticsImpl) o;
 
     if (count != that.count) {
       return false;
@@ -102,9 +100,10 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof BooleanStatisticsImpl) {
-        BooleanStatisticsImpl bkt = (BooleanStatisticsImpl) other;
+      if (other instanceof BooleanStatisticsImpl bkt) {
         trueCount += bkt.trueCount;
+      } else if (!(other instanceof BooleanColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of boolean column statistics");
       } else {
         if (isStatsExists() && trueCount != 0) {
           throw new IllegalArgumentException("Incompatible merging of boolean column statistics");
@@ -143,14 +142,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof BooleanStatisticsImpl)) {
+      if (!(o instanceof BooleanStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      BooleanStatisticsImpl that = (BooleanStatisticsImpl) o;
 
       return trueCount == that.trueCount;
     }
@@ -213,8 +210,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof CollectionColumnStatisticsImpl) {
-        CollectionColumnStatisticsImpl otherColl = (CollectionColumnStatisticsImpl) other;
+      if (other instanceof CollectionColumnStatisticsImpl otherColl) {
 
         if(count == 0) {
           minimum = otherColl.minimum;
@@ -228,6 +224,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
           }
         }
         sum += otherColl.sum;
+      } else if (!(other instanceof CollectionColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of collection column statistics");
       } else {
         if (isStatsExists()) {
           throw new IllegalArgumentException("Incompatible merging of collection column statistics");
@@ -272,14 +270,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof CollectionColumnStatisticsImpl)) {
+      if (!(o instanceof CollectionColumnStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      CollectionColumnStatisticsImpl that = (CollectionColumnStatisticsImpl) o;
 
       if (minimum != that.minimum) {
         return false;
@@ -383,8 +379,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof IntegerStatisticsImpl) {
-        IntegerStatisticsImpl otherInt = (IntegerStatisticsImpl) other;
+      if (other instanceof IntegerStatisticsImpl otherInt) {
         if (!hasMinimum) {
           hasMinimum = otherInt.hasMinimum;
           minimum = otherInt.minimum;
@@ -406,6 +401,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
             overflow = true;
           }
         }
+      } else if (!(other instanceof IntegerColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of integer column statistics");
       } else {
         if (isStatsExists() && hasMinimum) {
           throw new IllegalArgumentException("Incompatible merging of integer column statistics");
@@ -471,14 +468,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof IntegerStatisticsImpl)) {
+      if (!(o instanceof IntegerStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      IntegerStatisticsImpl that = (IntegerStatisticsImpl) o;
 
       if (minimum != that.minimum) {
         return false;
@@ -557,8 +552,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof DoubleStatisticsImpl) {
-        DoubleStatisticsImpl dbl = (DoubleStatisticsImpl) other;
+      if (other instanceof DoubleStatisticsImpl dbl) {
         if (!hasMinimum) {
           hasMinimum = dbl.hasMinimum;
           minimum = dbl.minimum;
@@ -572,6 +566,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
           }
         }
         sum += dbl.sum;
+      } else if (!(other instanceof DoubleColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of double column statistics");
       } else {
         if (isStatsExists() && hasMinimum) {
           throw new IllegalArgumentException("Incompatible merging of double column statistics");
@@ -628,14 +624,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof DoubleStatisticsImpl)) {
+      if (!(o instanceof DoubleStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      DoubleStatisticsImpl that = (DoubleStatisticsImpl) o;
 
       if (hasMinimum != that.hasMinimum) {
         return false;
@@ -753,8 +747,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof StringStatisticsImpl) {
-        StringStatisticsImpl str = (StringStatisticsImpl) other;
+      if (other instanceof StringStatisticsImpl str) {
         if (count == 0) {
           if (str.count != 0) {
             minimum = new Text(str.minimum);
@@ -778,6 +771,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
           }
         }
         sum += str.sum;
+      } else if (!(other instanceof StringColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of string column statistics");
       } else {
         if (isStatsExists()) {
           throw new IllegalArgumentException("Incompatible merging of string column statistics");
@@ -884,14 +879,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof StringStatisticsImpl)) {
+      if (!(o instanceof StringStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      StringStatisticsImpl that = (StringStatisticsImpl) o;
 
       if (sum != that.sum) {
         return false;
@@ -1010,9 +1003,10 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof BinaryColumnStatistics) {
-        BinaryStatisticsImpl bin = (BinaryStatisticsImpl) other;
+      if (other instanceof BinaryStatisticsImpl bin) {
         sum += bin.sum;
+      } else if (!(other instanceof BinaryColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of binary column statistics");
       } else {
         if (isStatsExists() && sum != 0) {
           throw new IllegalArgumentException("Incompatible merging of binary column statistics");
@@ -1050,14 +1044,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof BinaryStatisticsImpl)) {
+      if (!(o instanceof BinaryStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      BinaryStatisticsImpl that = (BinaryStatisticsImpl) o;
 
       return sum == that.sum;
     }
@@ -1129,8 +1121,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof DecimalStatisticsImpl) {
-        DecimalStatisticsImpl dec = (DecimalStatisticsImpl) other;
+      if (other instanceof DecimalStatisticsImpl dec) {
         if (minimum == null) {
           minimum = (dec.minimum != null ? new HiveDecimalWritable(dec.minimum) : null);
           maximum = (dec.maximum != null ? new HiveDecimalWritable(dec.maximum) : null);
@@ -1148,6 +1139,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
             sum.mutateAdd(dec.sum);
           }
         }
+      } else if (!(other instanceof DecimalColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of decimal column statistics");
       } else {
         if (isStatsExists() && minimum != null) {
           throw new IllegalArgumentException("Incompatible merging of decimal column statistics");
@@ -1209,14 +1202,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof DecimalStatisticsImpl)) {
+      if (!(o instanceof DecimalStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      DecimalStatisticsImpl that = (DecimalStatisticsImpl) o;
 
       if (minimum != null ? !minimum.equals(that.minimum) : that.minimum != null) {
         return false;
@@ -1323,8 +1314,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof Decimal64StatisticsImpl) {
-        Decimal64StatisticsImpl dec = (Decimal64StatisticsImpl) other;
+      if (other instanceof Decimal64StatisticsImpl dec) {
         if (getNumberOfValues() == 0) {
           minimum = dec.minimum;
           maximum = dec.maximum;
@@ -1344,6 +1334,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
             hasSum = false;
           }
         }
+      } else if (!(other instanceof DecimalColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of decimal column statistics");
       } else {
         if (other.getNumberOfValues() != 0) {
           throw new IllegalArgumentException("Incompatible merging of decimal column statistics");
@@ -1420,14 +1412,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof Decimal64StatisticsImpl)) {
+      if (!(o instanceof Decimal64StatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      Decimal64StatisticsImpl that = (Decimal64StatisticsImpl) o;
 
       if (minimum != that.minimum ||
           maximum != that.maximum ||
@@ -1508,10 +1498,11 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof DateStatisticsImpl) {
-        DateStatisticsImpl dateStats = (DateStatisticsImpl) other;
+      if (other instanceof DateStatisticsImpl dateStats) {
         minimum = Math.min(minimum, dateStats.minimum);
         maximum = Math.max(maximum, dateStats.maximum);
+      } else if (!(other instanceof DateColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of date column statistics");
       } else {
         if (isStatsExists() && count != 0) {
           throw new IllegalArgumentException("Incompatible merging of date column statistics");
@@ -1588,14 +1579,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof DateStatisticsImpl)) {
+      if (!(o instanceof DateStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      DateStatisticsImpl that = (DateStatisticsImpl) o;
 
       if (minimum != that.minimum) {
         return false;
@@ -1702,8 +1691,7 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
 
     @Override
     public void merge(ColumnStatisticsImpl other) {
-      if (other instanceof TimestampStatisticsImpl) {
-        TimestampStatisticsImpl timestampStats = (TimestampStatisticsImpl) other;
+      if (other instanceof TimestampStatisticsImpl timestampStats) {
         if (count == 0) {
           if (timestampStats.count != 0) {
             minimum = timestampStats.minimum;
@@ -1727,6 +1715,8 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
             maximum = timestampStats.maximum;
           }
         }
+      } else if (!(other instanceof TimestampColumnStatistics)) {
+        throw new IllegalArgumentException("Incompatible merging of timestamp column statistics");
       } else {
         if (isStatsExists() && count != 0) {
           throw new IllegalArgumentException("Incompatible merging of timestamp column statistics");
@@ -1817,14 +1807,12 @@ public class ColumnStatisticsImpl implements ColumnStatistics {
       if (this == o) {
         return true;
       }
-      if (!(o instanceof TimestampStatisticsImpl)) {
+      if (!(o instanceof TimestampStatisticsImpl that)) {
         return false;
       }
       if (!super.equals(o)) {
         return false;
       }
-
-      TimestampStatisticsImpl that = (TimestampStatisticsImpl) o;
 
       return minimum == that.minimum && maximum == that.maximum &&
           minNanos == that.minNanos && maxNanos == that.maxNanos;

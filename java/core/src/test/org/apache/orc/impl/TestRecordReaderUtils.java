@@ -18,14 +18,21 @@
 
 package org.apache.orc.impl;
 
+import org.apache.hadoop.fs.FSDataInputStream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.function.Executable;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertThrowsExactly;
 
 class TestRecordReaderUtils {
 
@@ -37,9 +44,9 @@ class TestRecordReaderUtils {
     .range(8000, 1000).build();
 
   private static void assertChunkEquals(BufferChunk expected, BufferChunk actual) {
-    assertTrue(Objects.equals(expected, actual)
-               && expected.getOffset() == actual.getOffset()
-               && expected.getLength() == actual.getLength());
+    assertTrue(Objects.equals(expected, actual) &&
+               expected.getOffset() == actual.getOffset() &&
+               expected.getLength() == actual.getLength());
   }
 
   @Test
@@ -138,6 +145,102 @@ class TestRecordReaderUtils {
     validateChunks(chunkReader);
     assertNotEquals(chunkReader.getReadBytes(), chunkReader.getReqBytes());
     assertEquals(chunkReader.getReadBytes(), chunkReader.getFrom().getData().array().length);
+  }
+
+  @Test
+  public void testZeroCopyReadAndRelease() throws IOException {
+    int blockSize = 4096;
+    ByteBuffer hdfsBlockMMapBuffer = makeByteBuffer(blockSize, 0);
+    int blockStartPosition = 4096;
+    MockDFSDataInputStream dis = new MockDFSDataInputStream(hdfsBlockMMapBuffer, blockStartPosition);
+    FSDataInputStream fis = new FSDataInputStream(dis);
+    RecordReaderUtils.ByteBufferAllocatorPool pool = new RecordReaderUtils.ByteBufferAllocatorPool();
+    HadoopShims.ZeroCopyReaderShim zrc = RecordReaderUtils.createZeroCopyShim(fis, null, pool);
+    BufferChunkList rangeList = new TestOrcLargeStripe.RangeBuilder()
+            .range(5000, 1000)
+            .range(6000, 1000)
+            .range(7000, 500).build();
+    RecordReaderUtils.zeroCopyReadRanges(fis, zrc, rangeList.get(0), rangeList.get(2), false);
+
+    assertArrayEquals(Arrays.copyOfRange(hdfsBlockMMapBuffer.array(), 5000 - blockStartPosition, 5000 - blockStartPosition + 1000), byteBufferToArray(rangeList.get(0).getData()));
+    assertArrayEquals(Arrays.copyOfRange(hdfsBlockMMapBuffer.array(), 6000 - blockStartPosition, 6000 - blockStartPosition + 1000), byteBufferToArray(rangeList.get(1).getData()));
+    assertArrayEquals(Arrays.copyOfRange(hdfsBlockMMapBuffer.array(), 7000 - blockStartPosition, 7000 - blockStartPosition + 500), byteBufferToArray(rangeList.get(2).getData()));
+
+    assertThrowsExactly(IllegalArgumentException.class, new Executable() {
+      @Override
+      public void execute() throws Throwable {
+        zrc.releaseBuffer(rangeList.get(0).getData());
+      }
+    });
+
+    zrc.releaseAllBuffers();
+
+    assertTrue(dis.isAllReleased());
+  }
+
+  @Test
+  public void testChunkReaderCreateOffsetExceedsMaxInt() {
+    List<long[]> mockData = Arrays.asList(
+      new long[]{15032282586L, 15032298848L},
+      new long[]{15032298848L, 15032299844L},
+      new long[]{15032299844L, 15032377804L},
+      new long[]{15058260587L, 15058261632L},
+      new long[]{15058261632L, 15058288409L},
+      new long[]{15058288409L, 15058288862L},
+      new long[]{15058339730L, 15058340775L},
+      new long[]{15058340775L, 15058342439L},
+      new long[]{15058449794L, 15058449982L},
+      new long[]{15058449982L, 15058451700L},
+      new long[]{15058451700L, 15058451749L},
+      new long[]{15058484358L, 15058484422L},
+      new long[]{15058484422L, 15058484862L},
+      new long[]{15058484862L, 15058484878L}
+    );
+    TestOrcLargeStripe.RangeBuilder rangeBuilder = new TestOrcLargeStripe.RangeBuilder();
+    mockData.forEach(e -> rangeBuilder.range(e[0], (int) (e[1] - e[0])));
+    BufferChunkList rangeList = rangeBuilder.build();
+
+    RecordReaderUtils.ChunkReader chunkReader = RecordReaderUtils.ChunkReader.create(rangeList.get(), 134217728);
+    long readBytes = mockData.get(mockData.size() - 1)[1] - mockData.get(0)[0];
+    long reqBytes = mockData.stream().mapToLong(e -> (int) (e[1] - e[0])).sum();
+    assertEquals(chunkReader.getReadBytes(), readBytes);
+    assertEquals(chunkReader.getReqBytes(), reqBytes);
+  }
+
+  @Test
+  public void testChunkReaderCreateReqBytesAndReadBytesValidation() {
+    BufferChunkList rangeList = new TestOrcLargeStripe.RangeBuilder()
+      .range(0, IOUtils.MAX_ARRAY_SIZE)
+      .range(1L + IOUtils.MAX_ARRAY_SIZE, IOUtils.MAX_ARRAY_SIZE + 1)
+      .range(2L * IOUtils.MAX_ARRAY_SIZE, IOUtils.MAX_ARRAY_SIZE - 4)
+      .range(3L * IOUtils.MAX_ARRAY_SIZE, 2)
+      .build();
+
+    // reqBytes,readBytes boundary value
+    RecordReaderUtils.ChunkReader chunkReader = RecordReaderUtils.ChunkReader.create(rangeList.get(0), 0);
+    assertEquals(chunkReader.getReadBytes(), IOUtils.MAX_ARRAY_SIZE);
+    assertEquals(chunkReader.getReqBytes(), IOUtils.MAX_ARRAY_SIZE);
+
+    // reqBytes > IOUtils.MAX_ARRAY_SIZE validation
+    assertThrowsExactly(IllegalArgumentException.class,
+      () -> RecordReaderUtils.ChunkReader.create(rangeList.get(1), 0),
+      () -> String.format("invalid reqBytes value %d,out of bounds %d",
+                          rangeList.get(1).getLength(), IOUtils.MAX_ARRAY_SIZE)
+    );
+
+    // readBytes > IOUtils.MAX_ARRAY_SIZE validation
+    assertThrowsExactly(IllegalArgumentException.class,
+      () -> RecordReaderUtils.ChunkReader.create(rangeList.get(2), 100),
+      () -> String.format("invalid readBytes value %d,out of bounds %d",
+                          rangeList.get(3).getEnd() - rangeList.get(2).getOffset(), IOUtils.MAX_ARRAY_SIZE)
+    );
+  }
+
+  private static byte[] byteBufferToArray(ByteBuffer buf) {
+    byte[] resultArray = new byte[buf.remaining()];
+    ByteBuffer buffer = buf.slice();
+    buffer.get(resultArray);
+    return resultArray;
   }
 
   private ByteBuffer makeByteBuffer(int length, long offset) {

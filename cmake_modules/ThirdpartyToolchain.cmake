@@ -15,6 +15,11 @@
 # specific language governing permissions and limitations
 # under the License.
 
+set(ORC_VENDOR_DEPENDENCIES)
+set(ORC_SYSTEM_DEPENDENCIES)
+set(ORC_INSTALL_INTERFACE_TARGETS)
+
+set(ORC_FORMAT_VERSION "1.0.0")
 set(LZ4_VERSION "1.9.3")
 set(SNAPPY_VERSION "1.1.7")
 set(ZLIB_VERSION "1.2.11")
@@ -46,22 +51,50 @@ string(TOUPPER ${CMAKE_BUILD_TYPE} UPPERCASE_BUILD_TYPE)
 
 if (DEFINED ENV{SNAPPY_HOME})
   set (SNAPPY_HOME "$ENV{SNAPPY_HOME}")
+elseif (Snappy_ROOT)
+  set (SNAPPY_HOME "${Snappy_ROOT}")
+elseif (DEFINED ENV{Snappy_ROOT})
+  set (SNAPPY_HOME "$ENV{Snappy_ROOT}")
+elseif (SNAPPY_ROOT)
+  set (SNAPPY_HOME "${SNAPPY_ROOT}")
+elseif (DEFINED ENV{SNAPPY_ROOT})
+  set (SNAPPY_HOME "$ENV{SNAPPY_ROOT}")
 endif ()
 
 if (DEFINED ENV{ZLIB_HOME})
   set (ZLIB_HOME "$ENV{ZLIB_HOME}")
+elseif (ZLIB_ROOT)
+  set (ZLIB_HOME "${ZLIB_ROOT}")
+elseif (DEFINED ENV{ZLIB_ROOT})
+  set (ZLIB_HOME "$ENV{ZLIB_ROOT}")
 endif ()
 
 if (DEFINED ENV{LZ4_HOME})
   set (LZ4_HOME "$ENV{LZ4_HOME}")
+elseif (LZ4_ROOT)
+  set (LZ4_HOME "${LZ4_ROOT}")
+elseif (DEFINED ENV{LZ4_ROOT})
+  set (LZ4_HOME "$ENV{LZ4_ROOT}")
 endif ()
 
 if (DEFINED ENV{PROTOBUF_HOME})
   set (PROTOBUF_HOME "$ENV{PROTOBUF_HOME}")
+elseif (Protobuf_ROOT)
+  set (PROTOBUF_HOME "${Protobuf_ROOT}")
+elseif (DEFINED ENV{Protobuf_ROOT})
+  set (PROTOBUF_HOME "$ENV{Protobuf_ROOT}")
+elseif (PROTOBUF_ROOT)
+  set (PROTOBUF_HOME "${PROTOBUF_ROOT}")
+elseif (DEFINED ENV{PROTOBUF_ROOT})
+  set (PROTOBUF_HOME "$ENV{PROTOBUF_ROOT}")
 endif ()
 
 if (DEFINED ENV{ZSTD_HOME})
   set (ZSTD_HOME "$ENV{ZSTD_HOME}")
+elseif (ZSTD_ROOT)
+  set (ZSTD_HOME "${ZSTD_ROOT}")
+elseif (DEFINED ENV{ZSTD_ROOT})
+  set (ZSTD_HOME "$ENV{ZSTD_ROOT}")
 endif ()
 
 if (DEFINED ENV{GTEST_HOME})
@@ -69,15 +102,72 @@ if (DEFINED ENV{GTEST_HOME})
 endif ()
 
 # ----------------------------------------------------------------------
-# Snappy
+# Macros for adding third-party libraries
+macro (add_resolved_library target_name link_lib include_dir)
+  add_library (${target_name} INTERFACE IMPORTED)
+  target_link_libraries (${target_name} INTERFACE ${link_lib})
+  target_include_directories (${target_name} SYSTEM INTERFACE ${include_dir})
+endmacro ()
 
-if (NOT "${SNAPPY_HOME}" STREQUAL "")
+macro (add_built_library external_project_name target_name link_lib include_dir)
+  file (MAKE_DIRECTORY "${include_dir}")
+
+  add_library (${target_name} STATIC IMPORTED)
+  set_target_properties (${target_name} PROPERTIES IMPORTED_LOCATION "${link_lib}")
+  target_include_directories (${target_name} BEFORE INTERFACE "${include_dir}")
+
+  add_dependencies (${target_name} ${external_project_name})
+  if (INSTALL_VENDORED_LIBS)
+    install (FILES "${link_lib}" DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+  endif ()
+endmacro ()
+
+function(provide_cmake_module MODULE_NAME)
+  set(module "${CMAKE_SOURCE_DIR}/cmake_modules/${MODULE_NAME}.cmake")
+  if(EXISTS "${module}")
+    message(STATUS "Providing CMake module for ${MODULE_NAME} as part of CMake package")
+    install(FILES "${module}" DESTINATION "${ORC_INSTALL_CMAKE_DIR}")
+  endif()
+endfunction()
+
+function(provide_find_module PACKAGE_NAME)
+  provide_cmake_module("Find${PACKAGE_NAME}")
+endfunction()
+
+# ----------------------------------------------------------------------
+# ORC Format
+ExternalProject_Add (orc-format_ep
+  URL "https://dlcdn.apache.org/orc/orc-format-${ORC_FORMAT_VERSION}/orc-format-${ORC_FORMAT_VERSION}.tar.gz"
+  URL "https://archive.apache.org/dist/orc/orc-format-${ORC_FORMAT_VERSION}/orc-format-${ORC_FORMAT_VERSION}.tar.gz"
+  URL_HASH SHA256=739fae5ff94b1f812b413077280361045bf92e510ef04b34a610e23a945d8cd5
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND     ""
+  INSTALL_COMMAND     ""
+  TEST_COMMAND     ""
+)
+
+# ----------------------------------------------------------------------
+# Snappy
+if (ORC_PACKAGE_KIND STREQUAL "conan")
+  find_package (Snappy REQUIRED CONFIG)
+  add_resolved_library (orc_snappy ${Snappy_LIBRARIES} ${Snappy_INCLUDE_DIR})
+  list (APPEND ORC_SYSTEM_DEPENDENCIES Snappy)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:Snappy::snappy>")
+elseif (NOT "${SNAPPY_HOME}" STREQUAL "")
   find_package (Snappy REQUIRED)
-  set(SNAPPY_VENDORED FALSE)
+  if (ORC_PREFER_STATIC_SNAPPY AND SNAPPY_STATIC_LIB)
+    add_resolved_library (orc_snappy ${SNAPPY_STATIC_LIB} ${SNAPPY_INCLUDE_DIR})
+  else ()
+    add_resolved_library (orc_snappy ${SNAPPY_LIBRARY} ${SNAPPY_INCLUDE_DIR})
+  endif ()
+  list (APPEND ORC_SYSTEM_DEPENDENCIES Snappy)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:Snappy::snappy>")
+  provide_find_module (Snappy)
 else ()
   set(SNAPPY_HOME "${THIRDPARTY_DIR}/snappy_ep-install")
   set(SNAPPY_INCLUDE_DIR "${SNAPPY_HOME}/include")
-  set(SNAPPY_STATIC_LIB "${SNAPPY_HOME}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}snappy${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(SNAPPY_STATIC_LIB_NAME "${CMAKE_STATIC_LIBRARY_PREFIX}snappy${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(SNAPPY_STATIC_LIB "${SNAPPY_HOME}/lib/${SNAPPY_STATIC_LIB_NAME}")
   set(SNAPPY_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${SNAPPY_HOME}
                         -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_LIBDIR=lib)
 
@@ -87,37 +177,36 @@ else ()
 
   ExternalProject_Add (snappy_ep
     URL "https://github.com/google/snappy/archive/${SNAPPY_VERSION}.tar.gz"
-    CMAKE_ARGS ${SNAPPY_CMAKE_ARGS}
+    CMAKE_ARGS ${SNAPPY_CMAKE_ARGS} -DSNAPPY_BUILD_TESTS=OFF
     ${THIRDPARTY_LOG_OPTIONS}
     BUILD_BYPRODUCTS "${SNAPPY_STATIC_LIB}")
 
-  set(SNAPPY_LIBRARY ${SNAPPY_STATIC_LIB})
-  set(SNAPPY_VENDORED TRUE)
+  add_built_library (snappy_ep orc_snappy ${SNAPPY_STATIC_LIB} ${SNAPPY_INCLUDE_DIR})
+
+  list (APPEND ORC_VENDOR_DEPENDENCIES "orc::vendored_snappy|${SNAPPY_STATIC_LIB_NAME}")
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:orc::vendored_snappy>")
 endif ()
 
-add_library (orc_snappy INTERFACE)
 add_library (orc::snappy ALIAS orc_snappy)
-if (ORC_PREFER_STATIC_SNAPPY AND ${SNAPPY_STATIC_LIB})
-  target_link_libraries(orc_snappy INTERFACE ${SNAPPY_STATIC_LIB})
-else ()
-  target_link_libraries(orc_snappy INTERFACE ${SNAPPY_LIBRARY})
-endif ()
-target_include_directories (orc_snappy SYSTEM INTERFACE ${SNAPPY_INCLUDE_DIR})
-
-if (SNAPPY_VENDORED)
-  add_dependencies (orc_snappy snappy_ep)
-  if (INSTALL_VENDORED_LIBS)
-    install(FILES "${SNAPPY_STATIC_LIB}"
-            DESTINATION "lib")
-  endif ()
-endif ()
 
 # ----------------------------------------------------------------------
 # ZLIB
 
-if (NOT "${ZLIB_HOME}" STREQUAL "")
+if (ORC_PACKAGE_KIND STREQUAL "conan")
+  find_package (ZLIB REQUIRED CONFIG)
+  add_resolved_library (orc_zlib ${ZLIB_LIBRARIES} ${ZLIB_INCLUDE_DIR})
+  list (APPEND ORC_SYSTEM_DEPENDENCIES ZLIB)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:ZLIB::ZLIB>")
+elseif (NOT "${ZLIB_HOME}" STREQUAL "")
   find_package (ZLIB REQUIRED)
-  set(ZLIB_VENDORED FALSE)
+  if (ORC_PREFER_STATIC_ZLIB AND ZLIB_STATIC_LIB)
+    add_resolved_library (orc_zlib ${ZLIB_STATIC_LIB} ${ZLIB_INCLUDE_DIR})
+  else ()
+    add_resolved_library (orc_zlib ${ZLIB_LIBRARY} ${ZLIB_INCLUDE_DIR})
+  endif ()
+  list (APPEND ORC_SYSTEM_DEPENDENCIES ZLIB)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:ZLIB::ZLIB>")
+  provide_find_module (ZLIB)
 else ()
   set(ZLIB_PREFIX "${THIRDPARTY_DIR}/zlib_ep-install")
   set(ZLIB_INCLUDE_DIR "${ZLIB_PREFIX}/include")
@@ -129,7 +218,8 @@ else ()
   else ()
     set(ZLIB_STATIC_LIB_NAME z)
   endif ()
-  set(ZLIB_STATIC_LIB "${ZLIB_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${ZLIB_STATIC_LIB_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(ZLIB_STATIC_LIB_NAME "${CMAKE_STATIC_LIBRARY_PREFIX}${ZLIB_STATIC_LIB_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(ZLIB_STATIC_LIB "${ZLIB_PREFIX}/lib/${ZLIB_STATIC_LIB_NAME}")
   set(ZLIB_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${ZLIB_PREFIX}
                       -DBUILD_SHARED_LIBS=OFF)
 
@@ -143,33 +233,33 @@ else ()
     ${THIRDPARTY_LOG_OPTIONS}
     BUILD_BYPRODUCTS "${ZLIB_STATIC_LIB}")
 
-  set(ZLIB_LIBRARY ${ZLIB_STATIC_LIB})
-  set(ZLIB_VENDORED TRUE)
+  add_built_library (zlib_ep orc_zlib ${ZLIB_STATIC_LIB} ${ZLIB_INCLUDE_DIR})
+
+  list (APPEND ORC_VENDOR_DEPENDENCIES "orc::vendored_zlib|${ZLIB_STATIC_LIB_NAME}")
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:orc::vendored_zlib>")
 endif ()
 
-add_library (orc_zlib INTERFACE)
 add_library (orc::zlib ALIAS orc_zlib)
-if (ORC_PREFER_STATIC_ZLIB AND ${ZLIB_STATIC_LIB})
-  target_link_libraries (orc_zlib INTERFACE ${ZLIB_STATIC_LIB})
-else ()
-  target_link_libraries (orc_zlib INTERFACE ${ZLIB_LIBRARY})
-endif ()
-target_include_directories (orc_zlib SYSTEM INTERFACE ${ZLIB_INCLUDE_DIR})
-
-if (ZLIB_VENDORED)
-  add_dependencies (orc_zlib zlib_ep)
-  if (INSTALL_VENDORED_LIBS)
-    install(FILES "${ZLIB_STATIC_LIB}"
-            DESTINATION "lib")
-  endif ()
-endif ()
 
 # ----------------------------------------------------------------------
 # Zstd
 
-if (NOT "${ZSTD_HOME}" STREQUAL "")
+if (ORC_PACKAGE_KIND STREQUAL "conan")
+  find_package (ZSTD REQUIRED CONFIG)
+  add_resolved_library (orc_zstd ${zstd_LIBRARIES} ${zstd_INCLUDE_DIR})
+  list (APPEND ORC_SYSTEM_DEPENDENCIES ZSTD)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:$<IF:$<TARGET_EXISTS:zstd::libzstd_shared>,zstd::libzstd_shared,zstd::libzstd_static>>")
+elseif (NOT "${ZSTD_HOME}" STREQUAL "")
   find_package (ZSTD REQUIRED)
-  set(ZSTD_VENDORED FALSE)
+  if (ORC_PREFER_STATIC_ZSTD AND ZSTD_STATIC_LIB)
+    add_resolved_library (orc_zstd ${ZSTD_STATIC_LIB} ${ZSTD_INCLUDE_DIR})
+    list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:zstd::libzstd_static>")
+  else ()
+    add_resolved_library (orc_zstd ${ZSTD_LIBRARY} ${ZSTD_INCLUDE_DIR})
+    list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:$<IF:$<TARGET_EXISTS:zstd::libzstd_shared>,zstd::libzstd_shared,zstd::libzstd_static>>")
+  endif ()
+  list (APPEND ORC_SYSTEM_DEPENDENCIES ZSTD)
+  provide_find_module (ZSTD)
 else ()
   set(ZSTD_HOME "${THIRDPARTY_DIR}/zstd_ep-install")
   set(ZSTD_INCLUDE_DIR "${ZSTD_HOME}/include")
@@ -181,7 +271,8 @@ else ()
   else ()
     set(ZSTD_STATIC_LIB_NAME zstd)
   endif ()
-  set(ZSTD_STATIC_LIB "${ZSTD_HOME}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${ZSTD_STATIC_LIB_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(ZSTD_STATIC_LIB_NAME "${CMAKE_STATIC_LIBRARY_PREFIX}${ZSTD_STATIC_LIB_NAME}${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(ZSTD_STATIC_LIB "${ZSTD_HOME}/lib/${ZSTD_STATIC_LIB_NAME}")
   set(ZSTD_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${ZSTD_HOME}
           -DBUILD_SHARED_LIBS=OFF -DCMAKE_INSTALL_LIBDIR=lib)
 
@@ -202,37 +293,36 @@ else ()
           ${THIRDPARTY_LOG_OPTIONS}
           BUILD_BYPRODUCTS ${ZSTD_STATIC_LIB})
 
-  set(ZSTD_LIBRARY ${ZSTD_STATIC_LIB})
-  set(ZSTD_VENDORED TRUE)
+  add_built_library (zstd_ep orc_zstd ${ZSTD_STATIC_LIB} ${ZSTD_INCLUDE_DIR})
+
+  list (APPEND ORC_VENDOR_DEPENDENCIES "orc::vendored_zstd|${ZSTD_STATIC_LIB_NAME}")
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:orc::vendored_zstd>")
 endif ()
 
-add_library (orc_zstd INTERFACE)
 add_library (orc::zstd ALIAS orc_zstd)
-if (ORC_PREFER_STATIC_ZSTD AND ${ZSTD_STATIC_LIB})
-  target_link_libraries (orc_zstd INTERFACE ${ZSTD_STATIC_LIB})
-else ()
-  target_link_libraries (orc_zstd INTERFACE ${ZSTD_LIBRARY})
-endif ()
-target_include_directories (orc_zstd SYSTEM INTERFACE ${ZSTD_INCLUDE_DIR})
-
-if (ZSTD_VENDORED)
-  add_dependencies (orc_zstd zstd_ep)
-  if (INSTALL_VENDORED_LIBS)
-    install(FILES "${ZSTD_STATIC_LIB}"
-            DESTINATION "lib")
-  endif ()
-endif ()
 
 # ----------------------------------------------------------------------
 # LZ4
-
-if (NOT "${LZ4_HOME}" STREQUAL "")
+if (ORC_PACKAGE_KIND STREQUAL "conan")
+  find_package (LZ4 REQUIRED CONFIG)
+  add_resolved_library (orc_lz4 ${lz4_LIBRARIES} ${lz4_INCLUDE_DIR})
+  list (APPEND ORC_SYSTEM_DEPENDENCIES LZ4)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:LZ4::lz4>")
+elseif (NOT "${LZ4_HOME}" STREQUAL "")
   find_package (LZ4 REQUIRED)
-  set(LZ4_VENDORED FALSE)
+  if (ORC_PREFER_STATIC_LZ4 AND LZ4_STATIC_LIB)
+    add_resolved_library (orc_lz4 ${LZ4_STATIC_LIB} ${LZ4_INCLUDE_DIR})
+  else ()
+    add_resolved_library (orc_lz4 ${LZ4_LIBRARY} ${LZ4_INCLUDE_DIR})
+  endif ()
+  list (APPEND ORC_SYSTEM_DEPENDENCIES LZ4)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:LZ4::lz4>")
+  provide_find_module (LZ4)
 else ()
   set(LZ4_PREFIX "${THIRDPARTY_DIR}/lz4_ep-install")
   set(LZ4_INCLUDE_DIR "${LZ4_PREFIX}/include")
-  set(LZ4_STATIC_LIB "${LZ4_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}lz4${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(LZ4_STATIC_LIB_NAME "${CMAKE_STATIC_LIBRARY_PREFIX}lz4${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(LZ4_STATIC_LIB "${LZ4_PREFIX}/lib/${LZ4_STATIC_LIB_NAME}")
   set(LZ4_CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${LZ4_PREFIX}
                      -DCMAKE_INSTALL_LIBDIR=lib
                      -DBUILD_SHARED_LIBS=OFF)
@@ -254,26 +344,13 @@ else ()
     ${THIRDPARTY_LOG_OPTIONS}
     BUILD_BYPRODUCTS ${LZ4_STATIC_LIB})
 
-  set(LZ4_LIBRARY ${LZ4_STATIC_LIB})
-  set(LZ4_VENDORED TRUE)
+  add_built_library (lz4_ep orc_lz4 ${LZ4_STATIC_LIB} ${LZ4_INCLUDE_DIR})
+
+  list (APPEND ORC_VENDOR_DEPENDENCIES "orc::vendored_lz4|${LZ4_STATIC_LIB_NAME}")
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:orc::vendored_lz4>")
 endif ()
 
-add_library (orc_lz4 INTERFACE)
 add_library (orc::lz4 ALIAS orc_lz4)
-if (ORC_PREFER_STATIC_LZ4 AND ${LZ4_STATIC_LIB})
-  target_link_libraries (orc_lz4 INTERFACE ${LZ4_STATIC_LIB})
-else ()
-  target_link_libraries (orc_lz4 INTERFACE ${LZ4_LIBRARY})
-endif ()
-target_include_directories (orc_lz4 SYSTEM INTERFACE ${LZ4_INCLUDE_DIR})
-
-if (LZ4_VENDORED)
-  add_dependencies (orc_lz4 lz4_ep)
-  if (INSTALL_VENDORED_LIBS)
-    install(FILES "${LZ4_STATIC_LIB}"
-            DESTINATION "lib")
-  endif ()
-endif ()
 
 # ----------------------------------------------------------------------
 # IANA - Time Zone Database
@@ -357,7 +434,7 @@ if (BUILD_CPP_TESTS)
   add_library (orc::gmock ALIAS orc_gmock)
   add_library (orc_gtest INTERFACE)
   add_library (orc::gtest ALIAS orc_gtest)
-  if (ORC_PREFER_STATIC_GMOCK AND ${GMOCK_STATIC_LIB})
+  if (ORC_PREFER_STATIC_GMOCK AND GMOCK_STATIC_LIB)
     target_link_libraries (orc_gmock INTERFACE ${GMOCK_STATIC_LIB})
     target_link_libraries (orc_gtest INTERFACE ${GTEST_STATIC_LIB})
   else ()
@@ -381,9 +458,29 @@ endif ()
 # ----------------------------------------------------------------------
 # Protobuf
 
-if (NOT "${PROTOBUF_HOME}" STREQUAL "")
+if (ORC_PACKAGE_KIND STREQUAL "conan")
+  find_package (Protobuf REQUIRED CONFIG)
+  add_resolved_library (orc_protobuf ${protobuf_LIBRARIES} ${protobuf_INCLUDE_DIR})
+  list (APPEND ORC_SYSTEM_DEPENDENCIES Protobuf)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:protobuf::libprotobuf>")
+elseif (NOT "${PROTOBUF_HOME}" STREQUAL "")
   find_package (Protobuf REQUIRED)
-  set(PROTOBUF_VENDORED FALSE)
+
+  if (ORC_PREFER_STATIC_PROTOBUF AND PROTOBUF_STATIC_LIB)
+    add_resolved_library (orc_protobuf ${PROTOBUF_STATIC_LIB} ${PROTOBUF_INCLUDE_DIR})
+  else ()
+    add_resolved_library (orc_protobuf ${PROTOBUF_LIBRARY} ${PROTOBUF_INCLUDE_DIR})
+  endif ()
+
+  if (ORC_PREFER_STATIC_PROTOBUF AND PROTOC_STATIC_LIB)
+    add_resolved_library (orc_protoc ${PROTOC_STATIC_LIB} ${PROTOBUF_INCLUDE_DIR})
+  else ()
+    add_resolved_library (orc_protoc ${PROTOC_LIBRARY} ${PROTOBUF_INCLUDE_DIR})
+  endif ()
+
+  list (APPEND ORC_SYSTEM_DEPENDENCIES Protobuf)
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:protobuf::libprotobuf>")
+  provide_find_module (Protobuf)
 else ()
   set(PROTOBUF_PREFIX "${THIRDPARTY_DIR}/protobuf_ep-install")
   set(PROTOBUF_INCLUDE_DIR "${PROTOBUF_PREFIX}/include")
@@ -403,7 +500,8 @@ else ()
   else ()
     set(PROTOBUF_STATIC_LIB_PREFIX ${CMAKE_STATIC_LIBRARY_PREFIX})
   endif ()
-  set(PROTOBUF_STATIC_LIB "${PROTOBUF_PREFIX}/lib/${PROTOBUF_STATIC_LIB_PREFIX}protobuf${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(PROTOBUF_STATIC_LIB_NAME "${PROTOBUF_STATIC_LIB_PREFIX}protobuf${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  set(PROTOBUF_STATIC_LIB "${PROTOBUF_PREFIX}/lib/${PROTOBUF_STATIC_LIB_NAME}")
   set(PROTOC_STATIC_LIB "${PROTOBUF_PREFIX}/lib/${PROTOBUF_STATIC_LIB_PREFIX}protoc${CMAKE_STATIC_LIBRARY_SUFFIX}")
   set(PROTOBUF_EXECUTABLE "${PROTOBUF_PREFIX}/bin/protoc${CMAKE_EXECUTABLE_SUFFIX}")
 
@@ -420,37 +518,16 @@ else ()
     ${THIRDPARTY_LOG_OPTIONS}
     BUILD_BYPRODUCTS "${PROTOBUF_STATIC_LIB}" "${PROTOC_STATIC_LIB}")
 
-  set(PROTOBUF_LIBRARY ${PROTOBUF_STATIC_LIB})
-  set(PROTOC_LIBRARY ${PROTOC_STATIC_LIB})
-  set(PROTOBUF_VENDORED TRUE)
+  add_built_library (protobuf_ep orc_protobuf ${PROTOBUF_STATIC_LIB} ${PROTOBUF_INCLUDE_DIR})
+  add_built_library (protobuf_ep orc_protoc ${PROTOC_STATIC_LIB} ${PROTOBUF_INCLUDE_DIR})
+
+  list (APPEND ORC_VENDOR_DEPENDENCIES "orc::vendored_protobuf|${PROTOBUF_STATIC_LIB_NAME}")
+  list (APPEND ORC_INSTALL_INTERFACE_TARGETS "$<INSTALL_INTERFACE:orc::vendored_protobuf>")
 endif ()
 
-add_library (orc_protobuf INTERFACE)
 add_library (orc::protobuf ALIAS orc_protobuf)
-add_library (orc_protoc INTERFACE)
-add_library (orc::protoc ALIAS orc_protoc)
-
-if (ORC_PREFER_STATIC_PROTOBUF AND ${PROTOBUF_STATIC_LIB})
-  target_link_libraries (orc_protobuf INTERFACE ${PROTOBUF_STATIC_LIB})
-else ()
-  target_link_libraries (orc_protobuf INTERFACE ${PROTOBUF_LIBRARY})
-endif()
-target_include_directories (orc_protobuf SYSTEM INTERFACE ${PROTOBUF_INCLUDE_DIR})
-
-if (ORC_PREFER_STATIC_PROTOBUF AND ${PROTOC_STATIC_LIB})
-  target_link_libraries (orc_protoc INTERFACE ${PROTOC_STATIC_LIB})
-else ()
-  target_link_libraries (orc_protoc INTERFACE ${PROTOC_LIBRARY})
-endif()
-target_include_directories (orc_protoc SYSTEM INTERFACE ${PROTOBUF_INCLUDE_DIR})
-
-if (PROTOBUF_VENDORED)
-  add_dependencies (orc_protoc protobuf_ep)
-  add_dependencies (orc_protobuf protobuf_ep)
-  if (INSTALL_VENDORED_LIBS)
-    install(FILES "${PROTOBUF_STATIC_LIB}" "${PROTOC_STATIC_LIB}"
-            DESTINATION "lib")
-  endif ()
+if (NOT ORC_PACKAGE_KIND STREQUAL "conan")
+  add_library (orc::protoc ALIAS orc_protoc)
 endif ()
 
 # ----------------------------------------------------------------------
@@ -495,15 +572,7 @@ if(BUILD_LIBHDFSPP)
         BUILD_BYPRODUCTS "${LIBHDFSPP_STATIC_LIB}"
         CMAKE_ARGS ${LIBHDFSPP_CMAKE_ARGS})
 
-      include_directories (SYSTEM ${LIBHDFSPP_INCLUDE_DIR})
-
-      add_library (libhdfspp STATIC IMPORTED)
-      set_target_properties (libhdfspp PROPERTIES IMPORTED_LOCATION ${LIBHDFSPP_STATIC_LIB})
-      add_dependencies (libhdfspp libhdfspp_ep)
-      if (INSTALL_VENDORED_LIBS)
-        install(FILES "${LIBHDFSPP_STATIC_LIB}"
-                DESTINATION "lib")
-      endif ()
+      add_built_library(libhdfspp_ep libhdfspp ${LIBHDFSPP_STATIC_LIB} ${LIBHDFSPP_INCLUDE_DIR})
 
       set (LIBHDFSPP_LIBRARIES
            libhdfspp

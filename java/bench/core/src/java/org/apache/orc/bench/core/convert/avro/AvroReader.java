@@ -41,6 +41,7 @@ import org.apache.orc.TypeDescription;
 import org.apache.orc.bench.core.convert.BatchReader;
 
 import java.io.IOException;
+import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.List;
 
@@ -201,7 +202,14 @@ public class AvroReader implements BatchReader {
         cv.isNull[row] = true;
       } else {
         DecimalColumnVector tc = (DecimalColumnVector) cv;
-        tc.vector[row].set(HiveDecimal.create(Math.round((double) value * multiplier)));
+        if (value instanceof ByteBuffer) {
+          tc.vector[row].set(getHiveDecimalFromByteBuffer((ByteBuffer) value, scale));
+        } else if (value instanceof GenericData.Fixed) {
+          tc.vector[row].set(getHiveDecimalFromByteBuffer(
+              ByteBuffer.wrap(((GenericData.Fixed) value).bytes()), scale));
+        } else {
+          tc.vector[row].set(HiveDecimal.create(Math.round((double) value * multiplier)));
+        }
       }
     }
   }
@@ -287,6 +295,13 @@ public class AvroReader implements BatchReader {
       default:
         throw new IllegalArgumentException("Unhandled type " + types);
     }
+  }
+
+  static HiveDecimal getHiveDecimalFromByteBuffer(ByteBuffer byteBuffer,
+                                                  int scale) {
+    byte[] result = getBytesFromByteBuffer(byteBuffer);
+    HiveDecimal dec = HiveDecimal.create(new BigInteger(result), scale);
+    return dec;
   }
 
   static byte[] getBytesFromByteBuffer(ByteBuffer byteBuffer) {

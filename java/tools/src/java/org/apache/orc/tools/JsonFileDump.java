@@ -49,6 +49,8 @@ import org.apache.orc.util.BloomFilterIO;
 
 import java.io.IOException;
 import java.io.StringWriter;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -66,6 +68,7 @@ public class JsonFileDump {
     }
     StringWriter stringWriter = new StringWriter();
     JsonWriter writer = new JsonWriter(stringWriter);
+    writer.setLenient(true);
     if (prettyPrint) {
       writer.setIndent("  ");
     }
@@ -109,10 +112,11 @@ public class JsonFileDump {
           writer.name("stripeNumber").value(n + 1);
           StripeStatistics ss = stripeStatistics.get(n);
           writer.name("columnStatistics").beginArray();
-          for (int i = 0; i < ss.getColumnStatistics().length; i++) {
+          ColumnStatistics[] columnStatistics = ss.getColumnStatistics();
+          for (int i = 0; i < columnStatistics.length; i++) {
             writer.beginObject();
             writer.name("columnId").value(i);
-            writeColumnStatistics(writer, ss.getColumnStatistics()[i]);
+            writeColumnStatistics(writer, columnStatistics[i]);
             writer.endObject();
           }
           writer.endArray();
@@ -207,10 +211,12 @@ public class JsonFileDump {
 
         FileSystem fs = path.getFileSystem(conf);
         long fileLen = fs.getContentSummary(path).getLength();
+        long rawDataSize = reader.getRawDataSize();
         long paddedBytes = FileDump.getTotalPaddingSize(reader);
         // empty ORC file is ~45 bytes. Assumption here is file length always >0
         double percentPadding = ((double) paddedBytes / (double) fileLen) * 100;
         writer.name("fileLength").value(fileLen);
+        writer.name("rawDataSize").value(rawDataSize);
         writer.name("paddingLength").value(paddedBytes);
         writer.name("paddingRatio").value(percentPadding);
         AcidStats acidStats = OrcAcidUtils.parseAcidStats(reader);
@@ -218,6 +224,17 @@ public class JsonFileDump {
           writer.name("numInserts").value(acidStats.inserts);
           writer.name("numDeletes").value(acidStats.deletes);
           writer.name("numUpdates").value(acidStats.updates);
+        }
+        List<String> keys = reader.getMetadataKeys();
+        keys.remove(OrcAcidUtils.ACID_STATS);
+        if (!keys.isEmpty()) {
+          writer.name("userMetadata").beginObject();
+          for (String key : keys) {
+            writer.name(key);
+            ByteBuffer byteBuffer = reader.getMetadataValue(key);
+            writer.value(String.valueOf(StandardCharsets.UTF_8.decode(byteBuffer)));
+          }
+          writer.endObject();
         }
         writer.name("status").value("OK");
         rows.close();

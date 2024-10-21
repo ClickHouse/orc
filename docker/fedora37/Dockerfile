@@ -14,12 +14,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# ORC compile for CentOS 7
+# ORC compile for Fedora Linux 37
 #
 
 FROM fedora:37
-LABEL maintainer="Apache ORC project <dev@orc.apache.org>"
-ARG jdk=17
+LABEL org.opencontainers.image.authors="Apache ORC project <dev@orc.apache.org>"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.ref.name="Apache ORC on Fedora Linux 37"
+LABEL org.opencontainers.image.version=""
 
 RUN yum check-update || true
 RUN yum install -y \
@@ -33,24 +35,12 @@ RUN yum install -y \
   git \
   libtool \
   make \
-  maven \
   openssl-devel \
   tar \
   wget \
   which \
-  zlib-devel && \
-  if [ "${jdk}" = "11" ] ; then \
-    yum install -y \
-    java-11-openjdk \
-    java-11-openjdk-devel \
-    && \
-    update-alternatives --set java  $(readlink -f /usr/lib/jvm/java-11-openjdk/bin/java) && \
-    update-alternatives --set javac $(readlink -f /usr/lib/jvm/java-11-openjdk/bin/javac) \
-  ; elif [ "${jdk}" = "8" ] ; then \
-    yum install -y \
-    java-1.8.0-openjdk \
-    java-1.8.0-openjdk-devel \
-  ; fi
+  zlib-devel \
+  java-17-openjdk-devel
 
 ENV TZ=America/Los_Angeles
 WORKDIR /root

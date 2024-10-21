@@ -65,6 +65,10 @@ public class ReaderImpl implements Reader {
 
   private static final Logger LOG = LoggerFactory.getLogger(ReaderImpl.class);
 
+  private static final OrcFile.Version[] ORC_FILE_VERSION_VALUES = OrcFile.Version.values();
+  private static final OrcFile.WriterVersion[] ORC_FILE_WRITER_VERSION_VALUES
+      = OrcFile.WriterVersion.values();
+
   private static final int DIRECTORY_SIZE_GUESS = 16 * 1024;
   public static final int DEFAULT_COMPRESSION_BLOCK_SIZE = 256 * 1024;
 
@@ -268,7 +272,7 @@ public class ReaderImpl implements Reader {
     if (versionList == null || versionList.isEmpty()) {
       return OrcFile.Version.V_0_11;
     }
-    for (OrcFile.Version version: OrcFile.Version.values()) {
+    for (OrcFile.Version version: ORC_FILE_VERSION_VALUES) {
       if (version.getMajor() == versionList.get(0) &&
           version.getMinor() == versionList.get(1)) {
         return version;
@@ -620,7 +624,7 @@ public class ReaderImpl implements Reader {
    * @return the version of the software that produced the file
    */
   public static OrcFile.WriterVersion getWriterVersion(int writerVersion) {
-    for(OrcFile.WriterVersion version: OrcFile.WriterVersion.values()) {
+    for(OrcFile.WriterVersion version: ORC_FILE_WRITER_VERSION_VALUES) {
       if (version.getId() == writerVersion) {
         return version;
       }
@@ -654,6 +658,7 @@ public class ReaderImpl implements Reader {
       case LZO:
       case LZ4:
       case ZSTD:
+      case BROTLI:
         break;
       default:
         throw new IllegalArgumentException("Unknown compression");
@@ -890,7 +895,7 @@ public class ReaderImpl implements Reader {
 
   @Override
   public RecordReader rows(Options options) throws IOException {
-    LOG.info("Reading ORC rows from " + path + " with " + options);
+    LOG.debug("Reading ORC rows from " + path + " with " + options);
     return new RecordReaderImpl(this, options);
   }
 

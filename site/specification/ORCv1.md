@@ -136,6 +136,7 @@ message Footer {
  // 2 = Presto
  // 3 = Scritchley Go from https://github.com/scritchley/orc
  // 4 = Trino
+ // 5 = CUDF
  optional uint32 writer = 9;
  // information about the encryption in this file
  optional Encryption encryption = 10;
@@ -803,8 +804,8 @@ length of 4 (3) as [0x5e, 0x03, 0x5c, 0xa1, 0xab, 0x1e, 0xde, 0xad,
 The patched base encoding is used for integer sequences whose bit
 widths varies a lot. The minimum signed value of the sequence is found
 and subtracted from the other values. The bit width of those adjusted
-values is analyzed and the 90 percentile of the bit width is chosen
-as W. The 10\% of values larger than W use patches from a patch list
+values is analyzed and the 95 percentile of the bit width is chosen
+as W. The 5% of values larger than W use patches from a patch list
 to set the additional bits. Patches are encoded as a list of gaps in
 the index values and the additional value bits.
 
@@ -823,14 +824,31 @@ the index values and the additional value bits.
   bit is set, the entire value is negated.
 * Data values (W * L bits padded to the byte) - A sequence of W bit positive
   values that are added to the base value.
-* Patch list (PLL * (PGW + PW) bytes) - A list of patches for values
-  that didn't fit within W bits. Each entry in the list consists of a
+* Patch list (PLL * closestFixedBits(PGW + PW) bits) - A list of patches for
+  values that didn't fit within W bits. Each entry in the list consists of a
   gap, which is the number of elements skipped from the previous
   patch, and a patch value. Patches are applied by logically or'ing
   the data values with the relevant patch shifted W bits left. If a
   patch is 0, it was introduced to skip over more than 255 items. The
-  combined length of each patch (PGW + PW) must be less or equal to
-  64.
+  combined length of each patch (PGW + PW) must be less or equal to 64.
+  (PGW + PW) is padded to the closest fixed bit size according to the
+  below table before being encoded in the patch list.
+
+(PGW + PW)    | closestFixedBits(PGW + PW)
+:------------ | :-------------
+1 <= x <= 24  | x
+25            | 26
+26            | 26
+27            | 28
+28            | 28
+29            | 30
+30            | 30
+31            | 32
+32            | 32
+33 <= x <= 40 | 40
+41 <= x <= 48 | 48
+49 <= x <= 56 | 56
+57 <= x <= 64 | 64
 
 The unsigned sequence of [2030, 2000, 2020, 1000000, 2040, 2050, 2060, 2070,
 2080, 2090, 2100, 2110, 2120, 2130, 2140, 2150, 2160, 2170, 2180, 2190]
@@ -1215,7 +1233,7 @@ the Hive type model.
 Encoding      | Stream Kind     | Optional | Contents
 :------------ | :-------------- | :------- | :-------
 DIRECT        | PRESENT         | Yes      | Boolean RLE
-              | DIRECT          | No       | Byte RLE
+              | DATA            | No       | Byte RLE
 
 # Indexes
 

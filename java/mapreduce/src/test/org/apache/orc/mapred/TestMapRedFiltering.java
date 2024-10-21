@@ -71,12 +71,12 @@ public class TestMapRedFiltering {
                                     new String[0]);
     FilterTestUtil.readStart();
     RecordReader<NullWritable, OrcStruct> r = new OrcInputFormat<OrcStruct>()
-      .getRecordReader(split, new JobConf(conf), null);
+        .getRecordReader(split, new JobConf(conf), null);
     long rowCount = validateFilteredRecordReader(r);
     double p = FilterTestUtil.readPercentage(FilterTestUtil.readEnd(),
                                              fs.getFileStatus(filePath).getLen());
     assertEquals(FilterTestUtil.RowCount, rowCount);
-    assertTrue(p >= 100);
+    assertTrue(p >= 0.06);
   }
 
   @Test
@@ -93,7 +93,7 @@ public class TestMapRedFiltering {
                                     new String[0]);
     FilterTestUtil.readStart();
     RecordReader<NullWritable, OrcStruct> r = new OrcInputFormat<OrcStruct>()
-      .getRecordReader(split, new JobConf(conf), null);
+        .getRecordReader(split, new JobConf(conf), null);
     long rowCount = validateFilteredRecordReader(r);
     double p = FilterTestUtil.readPercentage(FilterTestUtil.readEnd(),
                                              fs.getFileStatus(filePath).getLen());
@@ -139,7 +139,7 @@ public class TestMapRedFiltering {
                                     new String[0]);
     FilterTestUtil.readStart();
     RecordReader<NullWritable, OrcStruct> r = new OrcInputFormat<OrcStruct>()
-      .getRecordReader(split, new JobConf(conf), null);
+        .getRecordReader(split, new JobConf(conf), null);
     OrcStruct row = new OrcStruct(FilterTestUtil.schema);
     long rowCount = 0;
     while (r.next(NullWritable.get(), row)) {

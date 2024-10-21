@@ -55,7 +55,7 @@ namespace orc {
    */
   class WriterOptions {
    private:
-    std::unique_ptr<WriterOptionsPrivate> privateBits;
+    std::unique_ptr<WriterOptionsPrivate> privateBits_;
 
    public:
     WriterOptions();
@@ -77,6 +77,8 @@ namespace orc {
 
     /**
      * Set the data compression block size.
+     * Should less then 1 << 23 bytes (8M) which is limited by the
+     * 3 bytes size of compression block header (1 bit for isOriginal and 23 bits for length)
      */
     WriterOptions& setCompressionBlockSize(uint64_t size);
 
@@ -275,6 +277,19 @@ namespace orc {
      * @return if not set, return default value which is 1 MB.
      */
     uint64_t getOutputBufferCapacity() const;
+
+    /**
+     * Set the initial block size of original input buffer in the class CompressionStream.
+     * the input buffer is used to store raw data before compression, while the output buffer is
+     * dedicated to holding compressed data
+     */
+    WriterOptions& setMemoryBlockSize(uint64_t capacity);
+
+    /**
+     * Get the initial block size of original input buffer in the class CompressionStream.
+     * @return if not set, return default value which is 64 KB.
+     */
+    uint64_t getMemoryBlockSize() const;
   };
 
   class Writer {

@@ -22,6 +22,7 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.DoubleColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.orc.CompressionKind;
@@ -32,18 +33,14 @@ import org.apache.orc.Writer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.PrintStream;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class TestJsonFileDump {
 
@@ -120,6 +117,10 @@ public class TestJsonFileDump {
       writer.addRowBatch(batch);
     }
 
+    writer.addUserMetadata("hive.acid.key.index",
+        StandardCharsets.UTF_8.encode("1,1,1;2,3,5;"));
+    writer.addUserMetadata("some.user.property",
+        StandardCharsets.UTF_8.encode("foo#bar$baz&"));
     writer.close();
     PrintStream origOut = System.out;
     String outputFilename = "orc-file-dump.json";
@@ -132,6 +133,40 @@ public class TestJsonFileDump {
     System.setOut(origOut);
 
 
+    TestFileDump.checkOutput(outputFilename, workDir + File.separator + outputFilename);
+  }
+
+  @Test
+  public void testDoubleNaNAndInfinite() throws Exception {
+    TypeDescription schema = TypeDescription.fromString("struct<x:double>");
+    Writer writer = OrcFile.createWriter(testFilePath,
+        OrcFile.writerOptions(conf)
+            .fileSystem(fs)
+            .setSchema(schema));
+    VectorizedRowBatch batch = schema.createRowBatch();
+    DoubleColumnVector x = (DoubleColumnVector) batch.cols[0];
+    int row = batch.size++;
+    x.vector[row] = Double.NaN;
+    row = batch.size++;
+    x.vector[row] = Double.POSITIVE_INFINITY;
+    row = batch.size++;
+    x.vector[row] = 12.34D;
+    if (batch.size != 0) {
+      writer.addRowBatch(batch);
+    }
+    writer.close();
+
+    assertEquals(3, writer.getNumberOfRows());
+
+    PrintStream origOut = System.out;
+    String outputFilename = "orc-file-dump-nan-and-infinite.json";
+    FileOutputStream myOut = new FileOutputStream(workDir + File.separator + outputFilename);
+
+    // replace stdout and run command
+    System.setOut(new PrintStream(myOut, true, StandardCharsets.UTF_8));
+    FileDump.main(new String[]{testFilePath.toString(), "-j", "-p"});
+    System.out.flush();
+    System.setOut(origOut);
     TestFileDump.checkOutput(outputFilename, workDir + File.separator + outputFilename);
   }
 }

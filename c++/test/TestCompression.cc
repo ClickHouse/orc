@@ -42,12 +42,12 @@ namespace orc {
   }
 
   void decompressAndVerify(const MemoryOutputStream& memStream, CompressionKind kind,
-                           const char* data, size_t size, MemoryPool& pool) {
+                           const char* data, size_t size, MemoryPool& pool, uint64_t capacity) {
     auto inputStream =
         std::make_unique<SeekableArrayInputStream>(memStream.getData(), memStream.getLength());
 
     std::unique_ptr<SeekableInputStream> decompressStream =
-        createDecompressor(kind, std::move(inputStream), 1024, pool, getDefaultReaderMetrics());
+        createDecompressor(kind, std::move(inputStream), capacity, pool, getDefaultReaderMetrics());
 
     const char* decompressedBuffer;
     int decompressedSize;
@@ -66,7 +66,7 @@ namespace orc {
                          CompressionStrategy strategy, uint64_t capacity, uint64_t block,
                          MemoryPool& pool, const char* data, size_t dataSize) {
     std::unique_ptr<BufferedOutputStream> compressStream =
-        createCompressor(kind, outStream, strategy, capacity, block, pool, nullptr);
+        createCompressor(kind, outStream, strategy, capacity, block, block, pool, nullptr);
 
     size_t pos = 0;
     char* compressBuffer;
@@ -99,7 +99,7 @@ namespace orc {
     char testData[] = "hello world!";
     compressAndVerify(kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, testData,
                       sizeof(testData));
-    decompressAndVerify(memStream, kind, testData, sizeof(testData), *pool);
+    decompressAndVerify(memStream, kind, testData, sizeof(testData), *pool, capacity);
   }
 
   TEST(TestCompression, zlib_compress_original_string) {
@@ -117,7 +117,7 @@ namespace orc {
     char testData[] = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
     compressAndVerify(kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, testData,
                       sizeof(testData));
-    decompressAndVerify(memStream, kind, testData, sizeof(testData), *pool);
+    decompressAndVerify(memStream, kind, testData, sizeof(testData), *pool, capacity);
   }
 
   TEST(TestCompression, compress_simple_repeated_string) {
@@ -138,7 +138,7 @@ namespace orc {
     }
     compressAndVerify(kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, testData,
                       170);
-    decompressAndVerify(memStream, kind, testData, 170, *pool);
+    decompressAndVerify(memStream, kind, testData, 170, *pool, capacity);
   }
 
   TEST(TestCompression, zlib_compress_two_blocks) {
@@ -158,7 +158,7 @@ namespace orc {
     generateRandomData(testData, dataSize, true);
     compressAndVerify(kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, testData,
                       dataSize);
-    decompressAndVerify(memStream, kind, testData, dataSize, *pool);
+    decompressAndVerify(memStream, kind, testData, dataSize, *pool, capacity);
     delete[] testData;
   }
 
@@ -179,7 +179,7 @@ namespace orc {
     generateRandomData(testData, dataSize, false);
     compressAndVerify(kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, testData,
                       dataSize);
-    decompressAndVerify(memStream, kind, testData, dataSize, *pool);
+    decompressAndVerify(memStream, kind, testData, dataSize, *pool, capacity);
     delete[] testData;
   }
 
@@ -195,17 +195,17 @@ namespace orc {
     uint64_t block = 256;
 
     proto::PostScript ps;
-    ps.set_footerlength(197934);
+    ps.set_footer_length(197934);
     ps.set_compression(protoKind);
-    ps.set_metadatalength(100);
-    ps.set_writerversion(789);
+    ps.set_metadata_length(100);
+    ps.set_writer_version(789);
     ps.set_magic("protobuff_serialization");
     for (uint32_t i = 0; i < 1024; ++i) {
       ps.add_version(static_cast<uint32_t>(std::rand()));
     }
 
     std::unique_ptr<BufferedOutputStream> compressStream = createCompressor(
-        kind, &memStream, CompressionStrategy_SPEED, capacity, block, *pool, nullptr);
+        kind, &memStream, CompressionStrategy_SPEED, capacity, block, block, *pool, nullptr);
 
     EXPECT_TRUE(ps.SerializeToZeroCopyStream(compressStream.get()));
     compressStream->flush();
@@ -213,16 +213,16 @@ namespace orc {
     auto inputStream =
         std::make_unique<SeekableArrayInputStream>(memStream.getData(), memStream.getLength());
 
-    std::unique_ptr<SeekableInputStream> decompressStream =
-        createDecompressor(kind, std::move(inputStream), 1024, *pool, getDefaultReaderMetrics());
+    std::unique_ptr<SeekableInputStream> decompressStream = createDecompressor(
+        kind, std::move(inputStream), capacity, *pool, getDefaultReaderMetrics());
 
     proto::PostScript ps2;
     ps2.ParseFromZeroCopyStream(decompressStream.get());
 
-    EXPECT_EQ(ps.footerlength(), ps2.footerlength());
+    EXPECT_EQ(ps.footer_length(), ps2.footer_length());
     EXPECT_EQ(ps.compression(), ps2.compression());
-    EXPECT_EQ(ps.metadatalength(), ps2.metadatalength());
-    EXPECT_EQ(ps.writerversion(), ps2.writerversion());
+    EXPECT_EQ(ps.metadata_length(), ps2.metadata_length());
+    EXPECT_EQ(ps.writer_version(), ps2.writer_version());
     EXPECT_EQ(ps.magic(), ps2.magic());
     for (int i = 0; i < 1024; ++i) {
       EXPECT_EQ(ps.version(i), ps2.version(i));
@@ -312,7 +312,7 @@ namespace orc {
     uint64_t batchSize = 1024, blockSize = 256;
 
     AppendOnlyBufferedStream outStream(createCompressor(
-        kind, &memStream, strategy, DEFAULT_MEM_STREAM_SIZE, blockSize, *pool, nullptr));
+        kind, &memStream, strategy, DEFAULT_MEM_STREAM_SIZE, blockSize, blockSize, *pool, nullptr));
 
     // write 3 batches of data and record positions between every batch
     size_t row = 0;
@@ -335,7 +335,7 @@ namespace orc {
     auto inputStream =
         std::make_unique<SeekableArrayInputStream>(memStream.getData(), memStream.getLength());
     std::unique_ptr<SeekableInputStream> decompressStream = createDecompressor(
-        kind, std::move(inputStream), blockSize, *pool, getDefaultReaderMetrics());
+        kind, std::move(inputStream), DEFAULT_MEM_STREAM_SIZE, *pool, getDefaultReaderMetrics());
 
     // prepare positions to seek to
     EXPECT_EQ(rowIndexEntry1.positions_size(), rowIndexEntry2.positions_size());

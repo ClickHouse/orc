@@ -352,7 +352,7 @@ namespace orc {
     const char* expected = "XXXXabcdabcdABCDABCDwxyzwzyz123";
     ASSERT_EQ(strlen(expected), length);
     for (uint64_t i = 0; i < length; ++i) {
-      ASSERT_EQ(static_cast<const char>(expected[i]), static_cast<const char*>(ptr)[i]);
+      ASSERT_EQ(static_cast<char>(expected[i]), static_cast<const char*>(ptr)[i]);
     }
     ASSERT_TRUE(!result->Next(&ptr, &length));
   }
@@ -419,7 +419,7 @@ namespace orc {
     const char* expected = "XXXXabcdabcdABCDABCDwxyzwzyz123";
     ASSERT_EQ(strlen(expected), length);
     for (uint64_t i = 0; i < length; ++i) {
-      ASSERT_EQ(static_cast<const char>(expected[i]), static_cast<const char*>(ptr)[i]);
+      ASSERT_EQ(static_cast<char>(expected[i]), static_cast<const char*>(ptr)[i]);
     }
     ASSERT_TRUE(!result->Next(&ptr, &length));
   }
@@ -545,7 +545,7 @@ namespace orc {
         *getDefaultPool(), getDefaultReaderMetrics());
     const void* ptr;
     int length;
-    ASSERT_THROW(result->BackUp(20), std::logic_error);
+    ASSERT_THROW(result->BackUp(20), CompressionError);
     ASSERT_EQ(true, result->Next(&ptr, &length));
     ASSERT_EQ(30, length);
     for (int i = 0; i < 10; ++i) {
@@ -554,7 +554,7 @@ namespace orc {
       }
     }
     result->BackUp(10);
-    ASSERT_THROW(result->BackUp(2), std::logic_error);
+    ASSERT_THROW(result->BackUp(2), CompressionError);
     ASSERT_EQ(true, result->Next(&ptr, &length));
     ASSERT_EQ(10, length);
     for (int i = 0; i < 10; ++i) {
@@ -601,33 +601,33 @@ namespace orc {
 #define HEADER_SIZE 3
 
   class CompressBuffer {
-    std::vector<char> buf;
+    std::vector<char> buf_;
 
    public:
-    CompressBuffer(size_t capacity) : buf(capacity + HEADER_SIZE) {}
+    CompressBuffer(size_t capacity) : buf_(capacity + HEADER_SIZE) {}
 
     char* getCompressed() {
-      return buf.data() + HEADER_SIZE;
+      return buf_.data() + HEADER_SIZE;
     }
     char* getBuffer() {
-      return buf.data();
+      return buf_.data();
     }
 
     void writeHeader(size_t compressedSize) {
-      buf[0] = static_cast<char>(compressedSize << 1);
-      buf[1] = static_cast<char>(compressedSize >> 7);
-      buf[2] = static_cast<char>(compressedSize >> 15);
+      buf_[0] = static_cast<char>(compressedSize << 1);
+      buf_[1] = static_cast<char>(compressedSize >> 7);
+      buf_[2] = static_cast<char>(compressedSize >> 15);
     }
 
     void writeUncompressedHeader(size_t compressedSize) {
       writeHeader(compressedSize);
-      buf[0] |= 1;
+      buf_[0] |= 1;
     }
 
     size_t getCompressedSize() const {
-      size_t header = static_cast<unsigned char>(buf[0]);
-      header |= static_cast<size_t>(static_cast<unsigned char>(buf[1])) << 8;
-      header |= static_cast<size_t>(static_cast<unsigned char>(buf[2])) << 16;
+      size_t header = static_cast<unsigned char>(buf_[0]);
+      header |= static_cast<size_t>(static_cast<unsigned char>(buf_[1])) << 8;
+      header |= static_cast<size_t>(static_cast<unsigned char>(buf_[2])) << 16;
       return header >> 1;
     }
 

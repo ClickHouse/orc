@@ -10,26 +10,27 @@ dockerUrl: https://github.com/apache/orc/blob/main/docker
 The C++ library is supported on the following operating systems:
 
 * CentOS 7
-* Debian 10 to 11
-* MacOS 11.6 and 12.5
-* Ubuntu 20.04 to 22.04
+* Debian 10 to 12
+* MacOS 13 to 15
+* Ubuntu 22.04 to 24.04
 
 You'll want to install the usual set of developer tools, but at least:
 
 * cmake
 * g++ or clang++
-* java ( >= 1.8)
+* java ( >= 17)
 * make
 * maven ( >= 3)
 
 For each version of Linux, please check the corresponding Dockerfile, which
 is in the docker subdirectory, for the list of packages required to build ORC:
 
-* [CentOS 7]({{ page.dockerUrl }}/centos7/Dockerfile)
-* [Debian 10]({{ page.dockerUrl }}/debian10/Dockerfile)
 * [Debian 11]({{ page.dockerUrl }}/debian11/Dockerfile)
-* [Ubuntu 20]({{ page.dockerUrl }}/ubuntu20/Dockerfile)
+* [Debian 12]({{ page.dockerUrl }}/debian12/Dockerfile)
 * [Ubuntu 22]({{ page.dockerUrl }}/ubuntu22/Dockerfile)
+* [Ubuntu 24]({{ page.dockerUrl }}/ubuntu24/Dockerfile)
+* [Fedora 37]({{ page.dockerUrl }}/fedora37/Dockerfile)
+* [Oracle Linux 9]({{ page.dockerUrl }}/oraclelinux9/Dockerfile)
 
 To build a normal release:
 
@@ -58,7 +59,7 @@ is invoking:
 
 You'll need to install:
 
-* java (>= 1.8)
+* java (>= 17)
 * maven (>= 3)
 
 To build:

@@ -16,6 +16,7 @@
  * limitations under the License.
  */
 
+#include "Timezone.hh"
 #include "orc/Type.hh"
 #include "wrap/gtest-wrapper.h"
 
@@ -518,6 +519,705 @@ namespace orc {
       } else {
         EXPECT_TRUE(std::abs(111110000 - readC2.nanoseconds[idx]) <= 1) << i;
         EXPECT_TRUE(std::abs(333000000 - readC4.nanoseconds[idx]) <= 1) << i;
+      }
+    }
+  }
+
+  TEST(ConvertColumnReader, TestConvertDecimalToNumeric) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(Type::buildTypeFromString(
+        "struct<c1:decimal(10,2),c2:decimal(10,4),c3:decimal(20,4),c4:decimal(20,4)>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:boolean,c2:smallint,c3:int,c4:double>"));
+    WriterOptions options;
+    options.setUseTightNumericVector(true);
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[1]);
+    auto& c3 = dynamic_cast<Decimal128VectorBatch&>(*structBatch->fields[2]);
+    auto& c4 = dynamic_cast<Decimal128VectorBatch&>(*structBatch->fields[3]);
+
+    for (uint32_t i = 0; i < TEST_CASES / 2; i++) {
+      int64_t flag = i % 2 ? 1 : -1;
+      c1.values[i] = flag * (!(i % 2) ? static_cast<int64_t>(0) : static_cast<int64_t>(i * 123));
+      c2.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+      c3.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+      c4.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+    }
+    for (uint32_t i = TEST_CASES / 2; i < TEST_CASES; i++) {
+      c1.values[i] = 0;
+      c2.values[i] = (static_cast<int64_t>(std::numeric_limits<int16_t>::max()) + i) * 10000 + i;
+      c3.values[i] = (static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + i) * 10000 + i;
+      c4.values[i] = 0;
+    }
+
+    structBatch->numElements = c1.numElements = c2.numElements = c3.numElements = c4.numElements =
+        TEST_CASES;
+    writer->add(*batch);
+    writer->close();
+
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readStructBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<BooleanVectorBatch&>(*readStructBatch.fields[0]);
+    auto& readC2 = dynamic_cast<ShortVectorBatch&>(*readStructBatch.fields[1]);
+    auto& readC3 = dynamic_cast<IntVectorBatch&>(*readStructBatch.fields[2]);
+    auto& readC4 = dynamic_cast<DoubleVectorBatch&>(*readStructBatch.fields[3]);
+    EXPECT_EQ(TEST_CASES, readBatch->numElements);
+    for (int i = 0; i < TEST_CASES / 2; i++) {
+      size_t idx = static_cast<size_t>(i);
+      EXPECT_TRUE(readC1.notNull[idx]) << i;
+      EXPECT_TRUE(readC2.notNull[idx]) << i;
+      EXPECT_TRUE(readC3.notNull[idx]) << i;
+      EXPECT_TRUE(readC4.notNull[idx]) << i;
+
+      int64_t flag = i % 2 ? 1 : -1;
+      EXPECT_EQ(!(i % 2) ? 0 : 1, readC1.data[idx]) << i;
+      EXPECT_EQ(flag * i, readC2.data[idx]) << i;
+      EXPECT_EQ(flag * i, readC3.data[idx]) << i;
+      EXPECT_DOUBLE_EQ(1.0001 * flag * i, readC4.data[idx]) << i;
+    }
+    for (int i = TEST_CASES / 2; i < TEST_CASES; i++) {
+      size_t idx = static_cast<size_t>(i);
+      EXPECT_TRUE(readC1.notNull[idx]) << i;
+      EXPECT_FALSE(readC2.notNull[idx]) << i;
+      EXPECT_FALSE(readC3.notNull[idx]) << i;
+      EXPECT_TRUE(readC4.notNull[idx]) << i;
+    }
+  }
+
+  TEST(ConvertColumnReader, TestConvertDecimalToDecimal) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(Type::buildTypeFromString(
+        "struct<c1:decimal(10,4),c2:decimal(10,4),c3:decimal(20,4),c4:decimal(20,4)>"));
+    std::shared_ptr<Type> readType(Type::buildTypeFromString(
+        "struct<c1:decimal(9,5),c2:decimal(20,5),c3:decimal(10,3),c4:decimal(19,3)>"));
+    WriterOptions options;
+    options.setUseTightNumericVector(true);
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[1]);
+    auto& c3 = dynamic_cast<Decimal128VectorBatch&>(*structBatch->fields[2]);
+    auto& c4 = dynamic_cast<Decimal128VectorBatch&>(*structBatch->fields[3]);
+
+    for (uint32_t i = 0; i < TEST_CASES / 2; i++) {
+      int64_t flag = i % 2 ? 1 : -1;
+      c1.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+      c2.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+      c3.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+      c4.values[i] = flag * (static_cast<int64_t>(i * 10000) + i);
+    }
+    for (uint32_t i = TEST_CASES / 2; i < TEST_CASES; i++) {
+      c1.values[i] = 100000000ll + i;
+      c2.values[i] = 100000000ll + i;
+      c3.values[i] = (Int128("100000000000") += i);
+      c4.values[i] = (Int128("100000000000000000000") += i);
+    }
+
+    structBatch->numElements = c1.numElements = c2.numElements = c3.numElements = c4.numElements =
+        TEST_CASES;
+    writer->add(*batch);
+    writer->close();
+
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readStructBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<Decimal64VectorBatch&>(*readStructBatch.fields[0]);
+    auto& readC2 = dynamic_cast<Decimal128VectorBatch&>(*readStructBatch.fields[1]);
+    auto& readC3 = dynamic_cast<Decimal64VectorBatch&>(*readStructBatch.fields[2]);
+    auto& readC4 = dynamic_cast<Decimal128VectorBatch&>(*readStructBatch.fields[3]);
+    EXPECT_EQ(TEST_CASES, readBatch->numElements);
+    for (int i = 0; i < TEST_CASES / 2; i++) {
+      size_t idx = static_cast<size_t>(i);
+      EXPECT_TRUE(readC1.notNull[idx]) << i;
+      EXPECT_TRUE(readC2.notNull[idx]) << i;
+      EXPECT_TRUE(readC3.notNull[idx]) << i;
+      EXPECT_TRUE(readC4.notNull[idx]) << i;
+
+      int64_t flag = i % 2 ? 1 : -1;
+      EXPECT_EQ(readC1.values[idx], flag * (i * 100000 + i * 10));
+      EXPECT_EQ(readC2.values[idx].toLong(), flag * (i * 100000 + i * 10));
+      EXPECT_EQ(readC3.values[idx], flag * (i * 1000 + (i + 5) / 10));
+      EXPECT_EQ(readC4.values[idx].toLong(), flag * (i * 1000 + (i + 5) / 10));
+    }
+    for (int i = TEST_CASES / 2; i < TEST_CASES; i++) {
+      size_t idx = static_cast<size_t>(i);
+      EXPECT_FALSE(readC1.notNull[idx]) << i;
+      EXPECT_TRUE(readC2.notNull[idx]) << i;
+      EXPECT_FALSE(readC3.notNull[idx]) << i;
+      EXPECT_FALSE(readC4.notNull[idx]) << i;
+    }
+  }
+
+  TEST(ConvertColumnReader, TestConvertDecimalToTimestamp) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    std::string writerTimezoneName = "America/New_York";
+    std::string readerTimezoneName = "Australia/Sydney";
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(
+        Type::buildTypeFromString("struct<c1:decimal(14,4),c2:decimal(25,10)>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:timestamp,c2:timestamp with local time zone>"));
+    WriterOptions options;
+    options.setUseTightNumericVector(true);
+    options.setTimezoneName(writerTimezoneName);
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<Decimal128VectorBatch&>(*structBatch->fields[1]);
+
+    auto convertToSeconds = [](const Timezone& writerTimezone, const std::string& date) {
+      tm timeStruct;
+      if (strptime(date.c_str(), "%Y-%m-%d %H:%M:%S", &timeStruct) == nullptr) {
+        throw TimezoneError("bad time " + date);
+      }
+      return writerTimezone.convertFromUTC(timegm(&timeStruct));
+    };
+
+    std::vector<std::string> timeStrings;
+    for (int i = 0; i < TEST_CASES; i++) {
+      int64_t year = 1960 + (i / 12);
+      int64_t month = i % 12 + 1;
+      int64_t day = 27;
+      std::string others = "23:45:56";
+      std::stringstream ss;
+      ss << year << "-";
+      ss << std::setfill('0') << std::setw(2) << month << "-" << day << " " << others;
+      timeStrings.push_back(ss.str());
+    }
+    std::vector<int64_t> ts[2];
+    for (auto& time : timeStrings) {
+      ts[0].emplace_back(convertToSeconds(getTimezoneByName("GMT"), time));
+      ts[1].emplace_back(convertToSeconds(getTimezoneByName(writerTimezoneName), time));
+    }
+    bool overflow = false;
+
+    for (int i = 0; i < TEST_CASES; i++) {
+      c1.values[i] = ts[0][i] * 10000 + 1234;
+      c2.values[i] = scaleUpInt128ByPowerOfTen(Int128(ts[1][i]), 10, overflow) +=
+          Int128("1234567895");
+      assert(!overflow);
+    }
+
+    structBatch->numElements = c1.numElements = c2.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = false;
+    writer->add(*batch);
+    writer->close();
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    rowReaderOptions.setTimezoneName(readerTimezoneName);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<TimestampVectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<TimestampVectorBatch&>(*readSturctBatch.fields[1]);
+    for (int i = 0; i < TEST_CASES; i++) {
+      size_t idx = static_cast<size_t>(i);
+      EXPECT_TRUE(readC1.notNull[idx]) << i;
+      EXPECT_TRUE(readC2.notNull[idx]) << i;
+      EXPECT_EQ(getTimezoneByName(readerTimezoneName).convertToUTC(readC1.data[i]), ts[0][i]);
+      EXPECT_TRUE(readC1.nanoseconds[i] == 123400000);
+      EXPECT_EQ(readC2.data[i], ts[1][i]);
+      if (readC2.data[i] < 0) {
+        EXPECT_EQ(readC2.nanoseconds[i], 123456790) << timeStrings[i];
+      } else {
+        EXPECT_EQ(readC2.nanoseconds[i], 123456789) << timeStrings[i];
+      }
+    }
+  }
+
+  TEST(ConvertColumnReader, TestConvertDecimalToStringVariant) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(
+        Type::buildTypeFromString("struct<c1:decimal(14,3),c2:decimal(14,3),c3:decimal(14,3)>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:char(5),c2:varchar(5),c3:string>"));
+    WriterOptions options;
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[1]);
+    auto& c3 = dynamic_cast<Decimal64VectorBatch&>(*structBatch->fields[2]);
+
+    for (int i = 0; i < TEST_CASES; i++) {
+      c1.values[i] = i * 1000 + 123;
+      c2.values[i] = i * 1000 + 456;
+      c3.values[i] = i * 1000 + 789;
+    }
+    structBatch->numElements = c1.numElements = c2.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = false;
+    writer->add(*batch);
+    writer->close();
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[1]);
+    auto& readC3 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[2]);
+    for (int i = 0; i < TEST_CASES; i++) {
+      if (i < 10) {
+        EXPECT_EQ(std::to_string(i) + ".123", std::string(readC1.data[i], readC1.length[i]));
+        EXPECT_EQ(std::to_string(i) + ".456", std::string(readC2.data[i], readC2.length[i]));
+      } else if (i >= 10 && i < 100) {
+        EXPECT_EQ(std::to_string(i) + ".12", std::string(readC1.data[i], readC1.length[i]));
+        EXPECT_EQ(std::to_string(i) + ".45", std::string(readC2.data[i], readC2.length[i]));
+      } else if (i >= 100 && i < 1000) {
+        EXPECT_EQ(std::to_string(i) + ".1", std::string(readC1.data[i], readC1.length[i]));
+        EXPECT_EQ(std::to_string(i) + ".4", std::string(readC2.data[i], readC2.length[i]));
+      } else {
+        EXPECT_EQ(std::to_string(i) + ".", std::string(readC1.data[i], readC1.length[i]));
+        EXPECT_EQ(std::to_string(i) + ".", std::string(readC2.data[i], readC2.length[i]));
+      }
+      EXPECT_EQ(std::to_string(i) + ".789", std::string(readC3.data[i], readC3.length[i]));
+    }
+  }
+
+  TEST(ConvertColumnReader, TestConvertStringVariantToNumeric) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 6;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(
+        Type::buildTypeFromString("struct<c1:char(25),c2:varchar(25),c3:string>"));
+    std::shared_ptr<Type> readType(Type::buildTypeFromString("struct<c1:boolean,c2:int,c3:float>"));
+    WriterOptions options;
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[1]);
+    auto& c3 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[2]);
+    std::vector<std::string> raw1{"",     "123456", "0", "-1234567890", "999999999999999999999999",
+                                  "error"};
+    std::vector<std::string> raw2{"",     "123456", "0", "-1234567890", "999999999999999999999999",
+                                  "error"};
+    std::vector<std::string> raw3{
+        "",     "123456", "-0.0", "-123456789.0123", "1000000000000000000000000000000000000000",
+        "error"};
+
+    c1.notNull[0] = c2.notNull[0] = c3.notNull[0] = false;
+    for (int i = 1; i < TEST_CASES; i++) {
+      c1.data[i] = raw1[i].data();
+      c1.length[i] = raw1[i].length();
+      c1.notNull[i] = true;
+
+      c2.data[i] = raw2[i].data();
+      c2.length[i] = raw2[i].length();
+      c2.notNull[i] = true;
+
+      c3.data[i] = raw3[i].data();
+      c3.length[i] = raw3[i].length();
+      c3.notNull[i] = true;
+    }
+
+    structBatch->numElements = c1.numElements = c2.numElements = c3.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = c3.hasNulls = true;
+    writer->add(*batch);
+    writer->close();
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<BooleanVectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<IntVectorBatch&>(*readSturctBatch.fields[1]);
+    auto& readC3 = dynamic_cast<FloatVectorBatch&>(*readSturctBatch.fields[2]);
+
+    EXPECT_FALSE(readC1.notNull[0]);
+    EXPECT_FALSE(readC2.notNull[0]);
+    EXPECT_FALSE(readC3.notNull[0]);
+
+    for (int i = 1; i < 4; i++) {
+      EXPECT_TRUE(readC1.notNull[i]);
+      EXPECT_TRUE(readC2.notNull[i]);
+      EXPECT_TRUE(readC3.notNull[i]);
+    }
+
+    for (int i = 4; i <= 5; i++) {
+      EXPECT_FALSE(readC1.notNull[i]) << i;
+      EXPECT_FALSE(readC2.notNull[i]) << i;
+      EXPECT_FALSE(readC3.notNull[i]) << i;
+    }
+
+    EXPECT_EQ(readC1.data[1], 1);
+    EXPECT_EQ(readC2.data[1], 123456);
+    EXPECT_FLOAT_EQ(readC3.data[1], 123456);
+
+    EXPECT_EQ(readC1.data[2], 0);
+    EXPECT_EQ(readC2.data[2], 0);
+    EXPECT_FLOAT_EQ(readC3.data[2], -0.0);
+
+    EXPECT_EQ(readC1.data[3], 1);
+    EXPECT_EQ(readC2.data[3], -1234567890);
+    EXPECT_FLOAT_EQ(readC3.data[3], -123456789.0123);
+  }
+
+  TEST(ConvertColumnReader, TestConvertStringVariant) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 4;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(
+        Type::buildTypeFromString("struct<c1:char(5),c2:varchar(5),c3:string>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:string,c2:char(4),c3:varchar(4)>"));
+    WriterOptions options;
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[1]);
+    auto& c3 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[2]);
+
+    std::vector<std::string> raw1{"", "12345", "1", "1234"};
+    std::vector<std::string> raw2{"", "12345", "1", "1234"};
+    std::vector<std::string> raw3{"", "12345", "1", "1234"};
+
+    c1.notNull[0] = c2.notNull[0] = c3.notNull[0] = false;
+    for (int i = 1; i < TEST_CASES; i++) {
+      c1.data[i] = raw1[i].data();
+      c1.length[i] = raw1[i].length();
+      c1.notNull[i] = true;
+
+      c2.data[i] = raw2[i].data();
+      c2.length[i] = raw2[i].length();
+      c2.notNull[i] = true;
+
+      c3.data[i] = raw3[i].data();
+      c3.length[i] = raw3[i].length();
+      c3.notNull[i] = true;
+    }
+    structBatch->numElements = c1.numElements = c2.numElements = c3.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = c3.hasNulls = true;
+    writer->add(*batch);
+    writer->close();
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[1]);
+    auto& readC3 = dynamic_cast<StringVectorBatch&>(*readSturctBatch.fields[2]);
+
+    EXPECT_FALSE(readC1.notNull[0]);
+    EXPECT_FALSE(readC2.notNull[0]);
+    EXPECT_FALSE(readC3.notNull[0]);
+
+    for (int i = 1; i < TEST_CASES; i++) {
+      EXPECT_TRUE(readC1.notNull[i]);
+      EXPECT_TRUE(readC2.notNull[i]);
+      EXPECT_TRUE(readC3.notNull[i]);
+    }
+
+    EXPECT_EQ(std::string(readC1.data[1], readC1.length[1]), "12345");
+    EXPECT_EQ(std::string(readC2.data[1], readC2.length[1]), "1234");
+    EXPECT_EQ(std::string(readC3.data[1], readC3.length[1]), "1234");
+
+    EXPECT_EQ(std::string(readC1.data[2], readC1.length[2]), "1    ");
+    EXPECT_EQ(std::string(readC2.data[2], readC2.length[2]), "1   ");
+    EXPECT_EQ(std::string(readC3.data[2], readC3.length[2]), "1");
+
+    EXPECT_EQ(std::string(readC1.data[3], readC1.length[3]), "1234 ");
+    EXPECT_EQ(std::string(readC2.data[3], readC2.length[3]), "1234");
+    EXPECT_EQ(std::string(readC3.data[3], readC3.length[3]), "1234");
+  }
+
+  // Returns year/month/day triple in civil calendar
+  // Preconditions:  z is number of days since 1970-01-01 and is in the range:
+  //                   [numeric_limits<Int>::min(), numeric_limits<Int>::max()-719468].
+  template <class Int>
+  constexpr std::tuple<int, unsigned, unsigned> civil_from_days(Int z) noexcept {
+    static_assert(std::numeric_limits<unsigned>::digits >= 18,
+                  "This algorithm has not been ported to a 16 bit unsigned integer");
+    static_assert(std::numeric_limits<Int>::digits >= 20,
+                  "This algorithm has not been ported to a 16 bit signed integer");
+    z += 719468;
+    const Int era = (z >= 0 ? z : z - 146096) / 146097;
+    const unsigned doe = static_cast<unsigned>(z - era * 146097);                // [0, 146096]
+    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;  // [0, 399]
+    const Int y = static_cast<Int>(yoe) + era * 400;
+    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);  // [0, 365]
+    const unsigned mp = (5 * doy + 2) / 153;                       // [0, 11]
+    const unsigned d = doy - (153 * mp + 2) / 5 + 1;               // [1, 31]
+    const unsigned m = mp < 10 ? mp + 3 : mp - 9;                  // [1, 12]
+    return std::tuple<int, unsigned, unsigned>(y + (m <= 2), m, d);
+  }
+
+  static std::string timestampToString(int64_t seconds, int64_t nanos,
+                                       const std::string& zoneName) {
+    auto& timezone = getTimezoneByName(zoneName);
+    seconds = timezone.convertToUTC(seconds);
+    time_t t = static_cast<time_t>(seconds);
+    char buffer[100];
+    constexpr auto SECOND_IN_DAY = 3600 * 24;
+    auto day = t < 0 ? (t - SECOND_IN_DAY + 1) / SECOND_IN_DAY : t / SECOND_IN_DAY;
+
+    auto [y, m, d] = civil_from_days(day);
+    auto second_in_day = t % (3600 * 24);
+    if (second_in_day < 0) {
+      second_in_day += 3600 * 24;
+    }
+    auto h = second_in_day % (3600 * 24) / 3600;
+    auto min = second_in_day % 3600 / 60;
+    auto s = second_in_day % 60;
+    std::snprintf(buffer, sizeof(buffer), "%04d-%02d-%02d %02ld:%02ld:%02ld", y, m, d, h, min, s);
+    std::string result(buffer);
+    if (nanos) {
+      while (nanos % 10 == 0) nanos /= 10;
+      result = result + "." + std::to_string(nanos);
+    }
+    result = result + " " + zoneName;
+    return result;
+  }
+
+  TEST(ConvertColumnReader, TestConvertStringVariantToTimestamp) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    const std::string writerTimezone = "America/New_York";
+    const std::string readerTimezone = "Australia/Sydney";
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(Type::buildTypeFromString("struct<c1:string,c2:string>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:timestamp,c2:timestamp with local time zone>"));
+    WriterOptions options;
+    options.setTimezoneName(writerTimezone);
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[1]);
+
+    std::vector<std::string> raw1, raw2;
+    raw1.reserve(TEST_CASES * 3);
+    raw2.reserve(TEST_CASES * 3);
+    std::vector<int64_t> ts1, ts2;
+
+    for (int i = 0; i < TEST_CASES; i++) {
+      char buff[100];
+      auto size = ::snprintf(buff, sizeof(buff), "%04d-%02d-27 12:34:56.789", 1960 + (i / 12),
+                             (i % 12) + 1);
+      raw1.emplace_back(buff, size);
+      raw2.push_back(raw1.back() + " " + writerTimezone);
+      c1.data[i] = const_cast<char*>(raw1.back().c_str());
+      c1.length[i] = raw1.back().length();
+      c2.data[i] = const_cast<char*>(raw2.back().c_str());
+      c2.length[i] = raw2.back().length();
+    }
+    structBatch->numElements = c1.numElements = c2.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = false;
+    writer->add(*batch);
+
+    for (int i = 0; i < TEST_CASES; i++) {
+      char buff[100];
+      auto size =
+          ::snprintf(buff, sizeof(buff), "%04d-%02d-27 12:34:56", 1960 + (i / 12), (i % 12) + 1);
+      raw1.emplace_back(buff, size);
+      raw2.push_back(raw1.back() + " " + writerTimezone);
+      c1.data[i] = const_cast<char*>(raw1.back().c_str());
+      c1.length[i] = raw1.back().length();
+      c2.data[i] = const_cast<char*>(raw2.back().c_str());
+      c2.length[i] = raw2.back().length();
+    }
+    structBatch->numElements = c1.numElements = c2.numElements = TEST_CASES;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = false;
+    writer->add(*batch);
+
+    {
+      raw1.push_back("2024?11-14 00:01:02");
+      raw2.push_back("2024-01-02 03:04:05.678 tz/error");
+      c1.data[0] = const_cast<char*>(raw1.back().c_str());
+      c1.length[0] = raw1.back().length();
+      c2.data[0] = const_cast<char*>(raw2.back().c_str());
+      c2.length[0] = raw2.back().length();
+
+      c1.notNull[1] = false;
+      c2.notNull[1] = false;
+
+      raw1.push_back("2024-12-14 00:01:02.-1");
+      raw2.push_back("2024-01-02 03:04:05.678");
+      c1.data[2] = const_cast<char*>(raw1.back().c_str());
+      c1.length[2] = raw1.back().length();
+      c2.data[2] = const_cast<char*>(raw2.back().c_str());
+      c2.length[2] = raw2.back().length();
+    }
+    structBatch->numElements = c1.numElements = c2.numElements = 3;
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = true;
+    writer->add(*batch);
+
+    writer->close();
+
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    rowReaderOptions.setTimezoneName(readerTimezone);
+    rowReaderOptions.throwOnSchemaEvolutionOverflow(true);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES * 2);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<TimestampVectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<TimestampVectorBatch&>(*readSturctBatch.fields[1]);
+
+    for (int i = 0; i < TEST_CASES * 2; i++) {
+      EXPECT_TRUE(readC1.notNull[i]);
+      EXPECT_TRUE(readC2.notNull[i]);
+      EXPECT_EQ(raw1[i] + " " + readerTimezone,
+                timestampToString(readC1.data[i], readC1.nanoseconds[i], readerTimezone));
+      EXPECT_EQ(raw2[i], timestampToString(readC2.data[i], readC2.nanoseconds[i], writerTimezone));
+    }
+
+    rowReaderOptions.throwOnSchemaEvolutionOverflow(false);
+    rowReader = reader->createRowReader(rowReaderOptions);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+    EXPECT_EQ(3, readBatch->numElements);
+    EXPECT_FALSE(readC1.notNull[0]);
+    EXPECT_FALSE(readC2.notNull[0]);
+    EXPECT_FALSE(readC1.notNull[1]);
+    EXPECT_FALSE(readC2.notNull[1]);
+    EXPECT_FALSE(readC1.notNull[2]);
+    EXPECT_FALSE(readC2.notNull[2]);
+  }
+
+  TEST(ConvertColumnReader, TestConvertStringVariantToDecimal) {
+    constexpr int DEFAULT_MEM_STREAM_SIZE = 10 * 1024 * 1024;
+    constexpr int TEST_CASES = 1024;
+    MemoryOutputStream memStream(DEFAULT_MEM_STREAM_SIZE);
+    std::unique_ptr<Type> fileType(Type::buildTypeFromString("struct<c1:string,c2:string>"));
+    std::shared_ptr<Type> readType(
+        Type::buildTypeFromString("struct<c1:decimal(10,5),c2:decimal(25,10)>"));
+    WriterOptions options;
+    auto writer = createWriter(*fileType, &memStream, options);
+    auto batch = writer->createRowBatch(TEST_CASES);
+    auto structBatch = dynamic_cast<StructVectorBatch*>(batch.get());
+    auto& c1 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[0]);
+    auto& c2 = dynamic_cast<StringVectorBatch&>(*structBatch->fields[1]);
+
+    // <source_string, failed_to_int64, failed_to_int128, expected_int64, expected_int128>
+    std::vector<std::tuple<std::string, bool, bool, int64_t, Int128>> rawDataAndExpected;
+
+    rawDataAndExpected = {
+        /* 0 */ {"123456789012345678901234567890123456789", false, false, int64_t(), Int128()},
+        /* 1 */ {"123456789012345678901234567890.1234567890", false, false, int64_t(), Int128()},
+        /* 2 */ {"-123456789012345678901234567890.1234567890", false, false, int64_t(), Int128()},
+        /* 3 */ {"-foo.bar", false, false, int64_t(), Int128()},
+        /* 4 */ {"-foo.123", false, false, int64_t(), Int128()},
+        /* 5 */ {"-123.foo", false, false, int64_t(), Int128()},
+        /* 6 */ {"-123foo.123", false, false, int64_t(), Int128()},
+        /* 7 */ {"-123.123foo", false, false, int64_t(), Int128()},
+        /* 8 */ {"-.", false, false, int64_t(), Int128()},
+        /* 9 */ {"-", false, false, int64_t(), Int128()},
+        /* 10 */ {".", false, false, int64_t(), Int128()},
+        /* 11 */ {"", false, false, int64_t(), Int128()},
+        /* 12 */ {".12345", false, false, int64_t(), Int128()},
+        /* 13 */ {"12345.", false, false, int64_t(), Int128()},
+        /* 14 */ {"-1", true, true, -100000LL, Int128("-10000000000")},
+        /* 15 */ {"-1.0", true, true, -100000LL, Int128("-10000000000")},
+        /* 16 */ {"1", true, true, 100000, Int128("10000000000")},
+        /* 17 */ {"1.0", true, true, 100000, Int128("10000000000")},
+        /* 18 */ {"12345", true, true, 1234500000, Int128("123450000000000")},
+        /* 19 */ {"12345.12345", true, true, 1234512345LL, Int128("123451234500000")},
+        /* 20 */ {"-12345.12345", true, true, -1234512345LL, Int128("-123451234500000")},
+        /* 21 */ {"1234567890", false, true, int64_t(), Int128("12345678900000000000")},
+        /* 22 */ {"-1234567890", false, true, int64_t(), Int128("-12345678900000000000")},
+        /* 23 */ {"1234567890.123", false, true, int64_t(), Int128("12345678901230000000")},
+        /* 24 */ {"-1234567890.1234567", false, true, int64_t(), Int128("-12345678901234567000")},
+        /* 25 */ {"1234567890123.12345", false, true, int64_t(), Int128("12345678901231234500000")},
+        /* 26 */
+        {"-1234567890123.12345678901", false, true, int64_t(), Int128("-12345678901231234567890")}};
+    for (int i = 0; i < rawDataAndExpected.size(); i++) {
+      c1.data[i] = c2.data[i] = const_cast<char*>(std::get<0>(rawDataAndExpected[i]).c_str());
+      c1.length[i] = c2.length[i] = std::get<0>(rawDataAndExpected[i]).length();
+    }
+
+    structBatch->numElements = c1.numElements = c2.numElements = rawDataAndExpected.size();
+    structBatch->hasNulls = c1.hasNulls = c2.hasNulls = false;
+    writer->add(*batch);
+    writer->close();
+
+    auto inStream = std::make_unique<MemoryInputStream>(memStream.getData(), memStream.getLength());
+    auto pool = getDefaultPool();
+    auto reader = createReader(*pool, std::move(inStream));
+    RowReaderOptions rowReaderOptions;
+    rowReaderOptions.setUseTightNumericVector(true);
+    rowReaderOptions.setReadType(readType);
+    auto rowReader = reader->createRowReader(rowReaderOptions);
+    auto readBatch = rowReader->createRowBatch(TEST_CASES);
+    EXPECT_EQ(true, rowReader->next(*readBatch));
+
+    auto& readSturctBatch = dynamic_cast<StructVectorBatch&>(*readBatch);
+    auto& readC1 = dynamic_cast<Decimal64VectorBatch&>(*readSturctBatch.fields[0]);
+    auto& readC2 = dynamic_cast<Decimal128VectorBatch&>(*readSturctBatch.fields[1]);
+    EXPECT_EQ(readBatch->numElements, rawDataAndExpected.size());
+
+    for (int i = 0; i < readBatch->numElements; i++) {
+      bool expectedNotNull1 = std::get<1>(rawDataAndExpected[i]);
+      bool expectedNotNull2 = std::get<2>(rawDataAndExpected[i]);
+      EXPECT_EQ(expectedNotNull1, readC1.notNull[i]) << i;
+      EXPECT_EQ(expectedNotNull2, readC2.notNull[i]) << i;
+      if (expectedNotNull1) {
+        EXPECT_EQ(std::get<3>(rawDataAndExpected[i]), readC1.values[i]) << i;
+      }
+      if (expectedNotNull2) {
+        EXPECT_EQ(std::get<4>(rawDataAndExpected[i]), readC2.values[i]) << i;
       }
     }
   }

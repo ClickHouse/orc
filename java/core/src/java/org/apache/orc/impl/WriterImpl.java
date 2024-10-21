@@ -18,6 +18,7 @@
 
 package org.apache.orc.impl;
 
+import com.github.luben.zstd.util.Native;
 import com.google.protobuf.ByteString;
 import io.airlift.compress.lz4.Lz4Compressor;
 import io.airlift.compress.lz4.Lz4Decompressor;
@@ -236,7 +237,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
 
     treeWriter = TreeWriter.Factory.create(schema, null, new StreamFactory());
 
-    LOG.info("ORC writer created for path: {} with stripeSize: {} options: {}",
+    LOG.debug("ORC writer created for path: {} with stripeSize: {} options: {}",
         path, stripeSize, unencryptedOptions);
   }
 
@@ -273,6 +274,17 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
     return Math.min(kb256, Math.max(kb4, pow2));
   }
 
+  static {
+    try {
+      if (!"java".equalsIgnoreCase(System.getProperty("orc.compression.zstd.impl"))) {
+        Native.load();
+      }
+    } catch (UnsatisfiedLinkError | ExceptionInInitializerError e) {
+      LOG.warn("Unable to load zstd-jni library for your platform. " +
+            "Using builtin-java classes where applicable");
+    }
+  }
+
   public static CompressionCodec createCodec(CompressionKind kind) {
     switch (kind) {
       case NONE:
@@ -288,8 +300,18 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
         return new AircompressorCodec(kind, new Lz4Compressor(),
             new Lz4Decompressor());
       case ZSTD:
-        return new AircompressorCodec(kind, new ZstdCompressor(),
-            new ZstdDecompressor());
+        if ("java".equalsIgnoreCase(System.getProperty("orc.compression.zstd.impl"))) {
+          return new AircompressorCodec(kind, new ZstdCompressor(),
+                  new ZstdDecompressor());
+        }
+        if (Native.isLoaded()) {
+          return new ZstdCodec();
+        } else {
+          return new AircompressorCodec(kind, new ZstdCompressor(),
+              new ZstdDecompressor());
+        }
+      case BROTLI:
+        return new BrotliCodec();
       default:
         throw new IllegalArgumentException("Unknown compression codec: " +
             kind);
@@ -428,6 +450,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
     }
 
     @Override
+    @Deprecated
     public OrcFile.BloomFilterVersion getBloomFilterVersion() {
       return bloomFilterVersion;
     }
@@ -579,6 +602,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
       case LZO: return OrcProto.CompressionKind.LZO;
       case LZ4: return OrcProto.CompressionKind.LZ4;
       case ZSTD: return OrcProto.CompressionKind.ZSTD;
+      case BROTLI: return OrcProto.CompressionKind.BROTLI;
       default:
         throw new IllegalArgumentException("Unknown compression " + kind);
     }
@@ -612,7 +636,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
     HadoopShims.KeyMetadata meta = key.getMetadata();
     result.setKeyName(meta.getKeyName());
     result.setKeyVersion(meta.getVersion());
-    result.setAlgorithm(OrcProto.EncryptionAlgorithm.valueOf(
+    result.setAlgorithm(OrcProto.EncryptionAlgorithm.forNumber(
         meta.getAlgorithm().getSerialization()));
     return result;
   }
@@ -646,7 +670,7 @@ public class WriterImpl implements WriterInternal, MemoryManager.Callback {
     for(WriterEncryptionVariant variant: encryption) {
       encrypt.addVariants(writeEncryptionVariant(variant));
     }
-    encrypt.setKeyProvider(OrcProto.KeyProviderKind.valueOf(
+    encrypt.setKeyProvider(OrcProto.KeyProviderKind.forNumber(
         keyProvider.getKind().getValue()));
     return encrypt;
   }

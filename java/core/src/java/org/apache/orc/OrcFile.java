@@ -132,6 +132,7 @@ public class OrcFile {
     PRESTO(2),   // Presto writer
     SCRITCHLEY_GO(3), // Go writer from https://github.com/scritchley/orc
     TRINO(4),   // Trino writer
+    CUDF(5),    // CUDF writer
     UNKNOWN(Integer.MAX_VALUE);
 
     private final int id;
@@ -188,6 +189,9 @@ public class OrcFile {
 
     // Trino Writer
     TRINO_ORIGINAL(WriterImplementation.TRINO, 6),
+
+    // CUDF Writer
+    CUDF_ORIGINAL(WriterImplementation.CUDF, 6),
 
     // Don't use any magic numbers here except for the below:
     FUTURE(WriterImplementation.UNKNOWN, Integer.MAX_VALUE); // a version from a future writer
@@ -422,6 +426,27 @@ public class OrcFile {
     }
   }
 
+  public static class ZstdCompressOptions {
+    private int compressionZstdLevel;
+    private int compressionZstdWindowLog;
+
+    public int getCompressionZstdLevel() {
+      return compressionZstdLevel;
+    }
+
+    public void setCompressionZstdLevel(int compressionZstdLevel) {
+      this.compressionZstdLevel = compressionZstdLevel;
+    }
+
+    public int getCompressionZstdWindowLog() {
+      return compressionZstdWindowLog;
+    }
+
+    public void setCompressionZstdWindowLog(int compressionZstdWindowLog) {
+      this.compressionZstdWindowLog = compressionZstdWindowLog;
+    }
+  }
+
   /**
    * Options for creating ORC file writers.
    */
@@ -443,6 +468,7 @@ public class OrcFile {
     private WriterCallback callback;
     private EncodingStrategy encodingStrategy;
     private CompressionStrategy compressionStrategy;
+    private ZstdCompressOptions zstdCompressOptions;
     private double paddingTolerance;
     private String bloomFilterColumns;
     private double bloomFilterFpp;
@@ -488,6 +514,12 @@ public class OrcFile {
       String compString =
           OrcConf.COMPRESSION_STRATEGY.getString(tableProperties, conf);
       compressionStrategy = CompressionStrategy.valueOf(compString);
+
+      zstdCompressOptions = new ZstdCompressOptions();
+      zstdCompressOptions.setCompressionZstdLevel(
+              OrcConf.COMPRESSION_ZSTD_LEVEL.getInt(tableProperties, conf));
+      zstdCompressOptions.setCompressionZstdWindowLog(
+              OrcConf.COMPRESSION_ZSTD_WINDOWLOG.getInt(tableProperties, conf));
 
       paddingTolerance =
           OrcConf.BLOCK_PADDING_TOLERANCE.getDouble(tableProperties, conf);
@@ -691,6 +723,7 @@ public class OrcFile {
     /**
      * Set the version of the bloom filters to write.
      */
+    @Deprecated
     public WriterOptions bloomFilterVersion(BloomFilterVersion version) {
       this.bloomFilterVersion = version;
       return this;
@@ -934,6 +967,10 @@ public class OrcFile {
       return encodingStrategy;
     }
 
+    public ZstdCompressOptions getZstdCompressOptions() {
+      return zstdCompressOptions;
+    }
+
     public double getPaddingTolerance() {
       return paddingTolerance;
     }
@@ -942,6 +979,7 @@ public class OrcFile {
       return bloomFilterFpp;
     }
 
+    @Deprecated
     public BloomFilterVersion getBloomFilterVersion() {
       return bloomFilterVersion;
     }
@@ -1008,11 +1046,15 @@ public class OrcFile {
     return new WriterOptions(tableProperties, conf);
   }
 
-  private static MemoryManager memoryManager = null;
+  private static volatile MemoryManager memoryManager = null;
 
-  private static synchronized MemoryManager getStaticMemoryManager(Configuration conf) {
+  private static MemoryManager getStaticMemoryManager(Configuration conf) {
     if (memoryManager == null) {
-      memoryManager = new MemoryManagerImpl(conf);
+      synchronized (OrcFile.class) {
+        if (memoryManager == null) {
+          memoryManager = new MemoryManagerImpl(conf);
+        }
+      }
     }
     return memoryManager;
   }

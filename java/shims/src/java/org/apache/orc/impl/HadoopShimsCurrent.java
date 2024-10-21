@@ -96,7 +96,7 @@ public class HadoopShimsCurrent implements HadoopShims {
     List<org.apache.hadoop.crypto.key.KeyProvider> result =
         KeyProviderFactory.getProviders(conf);
     if (result.size() == 0) {
-      LOG.info("Can't get KeyProvider for ORC encryption from" +
+      LOG.debug("Can't get KeyProvider for ORC encryption from" +
           " hadoop.security.key.provider.path.");
       return new NullKeyProvider();
     } else {
@@ -118,8 +118,7 @@ public class HadoopShimsCurrent implements HadoopShims {
 
   @Override
   public boolean endVariableLengthBlock(OutputStream output) throws IOException {
-    if (output instanceof HdfsDataOutputStream) {
-      HdfsDataOutputStream hdfs = (HdfsDataOutputStream) output;
+    if (output instanceof HdfsDataOutputStream hdfs) {
       hdfs.hsync(EnumSet.of(HdfsDataOutputStream.SyncFlag.END_BLOCK));
       return true;
     }

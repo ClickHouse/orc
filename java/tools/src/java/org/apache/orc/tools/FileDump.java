@@ -79,13 +79,13 @@ public final class FileDump {
   }
 
   public static void main(Configuration conf, String[] args) throws Exception {
-    List<Integer> rowIndexCols = new ArrayList<Integer>(0);
+    List<Integer> rowIndexCols = new ArrayList<>(0);
     Options opts = createOptions();
     CommandLine cli = new DefaultParser().parse(opts, args);
 
     if (cli.hasOption('h')) {
       HelpFormatter formatter = new HelpFormatter();
-      formatter.printHelp("orcfiledump", opts);
+      formatter.printHelp("meta", opts);
       return;
     }
 
@@ -103,7 +103,7 @@ public final class FileDump {
         rowIndexCols = null; // All the columns
       } else {
         String[] colStrs = cli.getOptionValue("r").split(",");
-        rowIndexCols = new ArrayList<Integer>(colStrs.length);
+        rowIndexCols = new ArrayList<>(colStrs.length);
         for (String colStr : colStrs) {
           rowIndexCols.add(Integer.parseInt(colStr));
         }
@@ -134,7 +134,9 @@ public final class FileDump {
         boolean prettyPrint = cli.hasOption('p');
         JsonFileDump.printJsonMetaData(filesInPath, conf, rowIndexCols, prettyPrint, printTimeZone);
       } else {
-        printMetaData(filesInPath, conf, rowIndexCols, printTimeZone, recover, backupPath);
+        boolean printColumnType = cli.hasOption("column-type");
+        printMetaData(filesInPath, conf, rowIndexCols, printTimeZone, recover, backupPath,
+            printColumnType);
       }
     }
   }
@@ -179,8 +181,7 @@ public final class FileDump {
     final boolean sideFileExists = fs.exists(sideFile);
     boolean openDataFile = false;
     boolean openSideFile = false;
-    if (fs instanceof DistributedFileSystem) {
-      DistributedFileSystem dfs = (DistributedFileSystem) fs;
+    if (fs instanceof DistributedFileSystem dfs) {
       openDataFile = !dfs.isFileClosed(path);
       openSideFile = sideFileExists && !dfs.isFileClosed(sideFile);
     }
@@ -269,11 +270,11 @@ public final class FileDump {
 
   private static void printMetaData(List<String> files, Configuration conf,
       List<Integer> rowIndexCols, boolean printTimeZone, final boolean recover,
-      final String backupPath)
+      final String backupPath, final boolean printColumnType)
       throws IOException {
     List<String> corruptFiles = new ArrayList<>();
     for (String filename : files) {
-      printMetaDataImpl(filename, conf, rowIndexCols, printTimeZone, corruptFiles);
+      printMetaDataImpl(filename, conf, rowIndexCols, printTimeZone, corruptFiles, printColumnType);
       System.out.println(SEPARATOR);
     }
 
@@ -292,6 +293,15 @@ public final class FileDump {
         System.err.println(buffer);
         System.out.println(SEPARATOR);
       }
+    }
+  }
+
+  static void printColumnsType(TypeDescription schema) {
+    int maximumId = schema.getMaximumId();
+    for (int c = schema.getId(); c < maximumId + 1; ++c) {
+      TypeDescription type = schema.findSubtype(c);
+      System.out.println("  Column " + type.getId() + ": field: " + type.getFullFieldName() +
+          " type: " + type.toString());
     }
   }
 
@@ -330,7 +340,7 @@ public final class FileDump {
 
   private static void printMetaDataImpl(final String filename,
       final Configuration conf, List<Integer> rowIndexCols, final boolean printTimeZone,
-      final List<String> corruptFiles) throws IOException {
+      final List<String> corruptFiles, final boolean printColumnType) throws IOException {
     Path file = new Path(filename);
     Reader reader = getReader(file, conf, corruptFiles);
     // if we can create reader then footer is not corrupt and file will readable
@@ -352,15 +362,20 @@ public final class FileDump {
                            ? "Proleptic Gregorian"
                            : "Julian/Gregorian"));
     System.out.println("Type: " + reader.getSchema().toString());
+    if (printColumnType) {
+      System.out.println("Columns type:");
+      printColumnsType(reader.getSchema());
+    }
     printTypeAnnotations(reader.getSchema(), "root");
     System.out.println("\nStripe Statistics:");
     List<StripeStatistics> stripeStats = reader.getStripeStatistics();
     for (int n = 0; n < stripeStats.size(); n++) {
       System.out.println("  Stripe " + (n + 1) + ":");
       StripeStatistics ss = stripeStats.get(n);
-      for (int i = 0; i < ss.getColumnStatistics().length; ++i) {
+      ColumnStatistics[] columnStatistics = ss.getColumnStatistics();
+      for (int i = 0; i < columnStatistics.length; ++i) {
         System.out.println("    Column " + i + ": " +
-            ss.getColumnStatistics()[i].toString());
+            columnStatistics[i].toString());
       }
     }
     ColumnStatistics[] stats = reader.getStatistics();
@@ -438,10 +453,12 @@ public final class FileDump {
 
     FileSystem fs = file.getFileSystem(conf);
     long fileLen = fs.getFileStatus(file).getLen();
+    long rawDataSize = reader.getRawDataSize();
     long paddedBytes = getTotalPaddingSize(reader);
     double percentPadding = (fileLen == 0) ? 0.0d : 100.0d * paddedBytes / fileLen;
     DecimalFormat format = new DecimalFormat("##.##");
     System.out.println("\nFile length: " + fileLen + " bytes");
+    System.out.println("File raw data size: " + rawDataSize + " bytes");
     System.out.println("Padding length: " + paddedBytes + " bytes");
     System.out.println("Padding ratio: " + format.format(percentPadding) + "%");
     //print out any user metadata properties
@@ -832,6 +849,11 @@ public final class FileDump {
         .longOpt("backup-path")
         .desc("specify a backup path to store the corrupted files (default: /tmp)")
         .hasArg()
+        .build());
+
+    result.addOption(Option.builder()
+        .longOpt("column-type")
+        .desc("Print the column id, name and type of each column")
         .build());
     return result;
   }

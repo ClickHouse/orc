@@ -46,6 +46,7 @@ import org.apache.spark.sql.types.StructType;
 import org.apache.spark.sql.vectorized.ColumnarBatch;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
+import org.openjdk.jmh.annotations.Fork;
 import org.openjdk.jmh.annotations.Level;
 import org.openjdk.jmh.annotations.Mode;
 import org.openjdk.jmh.annotations.OutputTimeUnit;
@@ -60,9 +61,9 @@ import scala.Function1;
 import scala.Tuple2;
 import scala.collection.Iterator;
 import scala.collection.JavaConverters;
-import scala.collection.Seq;
 import scala.collection.immutable.Map;
 import scala.collection.immutable.Map$;
+import scala.collection.immutable.Seq;
 
 import java.io.IOException;
 import java.sql.Timestamp;
@@ -73,6 +74,8 @@ import java.util.concurrent.TimeUnit;
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.MICROSECONDS)
 @AutoService(OrcBenchmark.class)
+@Fork(jvmArgsAppend = {"--add-opens=java.base/sun.nio.ch=ALL-UNNAMED",
+    "--add-opens=java.base/sun.util.calendar=ALL-UNNAMED"})
 public class SparkBenchmark implements OrcBenchmark {
 
   private static final Path root = Utilities.getBenchmarkRoot();
@@ -122,6 +125,7 @@ public class SparkBenchmark implements OrcBenchmark {
     public void setup() {
       session = SparkSession.builder().appName("benchmark")
           .config("spark.master", "local[4]")
+          .config("spark.log.level", "ERROR")
           .config("spark.sql.orc.filterPushdown", true)
           .config("spark.sql.orc.impl", "native")
           .getOrCreate();
@@ -189,6 +193,12 @@ public class SparkBenchmark implements OrcBenchmark {
       case "json":
         options.add(new Tuple2<>("timestampFormat", "yyyy-MM-dd HH:mm:ss.SSS"));
         break;
+      case "orc":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
+      case "parquet":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
       default:
         break;
     }
@@ -202,7 +212,8 @@ public class SparkBenchmark implements OrcBenchmark {
             JavaConverters.collectionAsScalaIterableConverter(filters).asScala().toSeq(),
             scalaMap, source.conf);
     PartitionedFile file = new PartitionedFile(InternalRow.empty(),
-        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L);
+        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L,
+        Map$.MODULE$.empty());
     processReader(factory.apply(file), statistics, counters, blackhole);
   }
 
@@ -218,6 +229,12 @@ public class SparkBenchmark implements OrcBenchmark {
       case "json":
       case "avro":
         throw new IllegalArgumentException(source.format + " can't handle projection");
+      case "orc":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
+      case "parquet":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
       default:
         break;
     }
@@ -250,7 +267,8 @@ public class SparkBenchmark implements OrcBenchmark {
             JavaConverters.collectionAsScalaIterableConverter(filters).asScala().toSeq(),
             scalaMap, source.conf);
     PartitionedFile file = new PartitionedFile(InternalRow.empty(),
-        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L);
+        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L,
+        Map$.MODULE$.empty());
     processReader(factory.apply(file), statistics, counters, blackhole);
   }
 
@@ -289,6 +307,12 @@ public class SparkBenchmark implements OrcBenchmark {
       case "json":
       case "avro":
         throw new IllegalArgumentException(source.format + " can't handle pushdown");
+      case "orc":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
+      case "parquet":
+        options.add(new Tuple2<>("returning_batch", "true")); // SPARK-40918
+        break;
       default:
         break;
     }
@@ -302,7 +326,8 @@ public class SparkBenchmark implements OrcBenchmark {
             JavaConverters.collectionAsScalaIterableConverter(filters).asScala().toSeq(),
             scalaMap, source.conf);
     PartitionedFile file = new PartitionedFile(InternalRow.empty(),
-        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L);
+        SparkPath.fromPath(source.path), 0, Long.MAX_VALUE, new String[0], 0L, 0L,
+        Map$.MODULE$.empty());
     processReader(factory.apply(file), statistics, counters, blackhole);
   }
 }

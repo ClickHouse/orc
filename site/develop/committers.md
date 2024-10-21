@@ -13,12 +13,15 @@ Name                    | Apache Id    | Role
 Aliaksei Sandryhaila    | asandryh     | PMC
 Chris Douglas           | cdouglas     | PMC
 Chinna Rao Lalam        | chinnaraol   | Committer
+Shaoyun Chen            | csy          | Committer
 Chaoyu Tang             | ctang        | Committer
 Carl Steinbach          | cws          | Committer
 Daniel Dai              | daijy        | Committer
+Deshan Xiao             | deshanxiao   | Committer
 Dongjoon Hyun           | dongjoon     | PMC
 Deepak Majeti           | mdeepak      | PMC
 Eugene Koifman          | ekoifman     | PMC
+Yuanping Wu             | ffacs        | Committer
 Gang Wu                 | gangwu       | PMC
 Gopal Vijayaraghavan    | gopalv       | PMC
 Gunther Hagleitner      | gunther      | Committer
@@ -79,6 +82,7 @@ Companies with employees that are committers:
 * Intel
 * LinkedIn
 * Microsoft
+* Trip
 * Uber
 * Vertica
 * Workday

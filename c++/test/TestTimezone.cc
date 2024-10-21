@@ -18,8 +18,11 @@
 
 #include "Adaptor.hh"
 #include "Timezone.hh"
+#include "wrap/gmock.h"
 #include "wrap/gtest-wrapper.h"
 
+#include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <vector>
 
@@ -401,4 +404,79 @@ namespace orc {
     // DST ends in Los Angeles November 5, 2:00 am
     EXPECT_EQ(1699164000 + 8 * 3600, la->convertFromUTC(1699164000));
   }
+
+  bool setEnv(const char* name, const char* value) {
+#ifdef _MSC_VER
+    return _putenv_s(name, value) == 0;
+#else
+    return setenv(name, value, 1) == 0;
+#endif
+  }
+
+  bool delEnv(const char* name) {
+#ifdef _MSC_VER
+    return _putenv_s(name, "") == 0;
+#else
+    return unsetenv(name) == 0;
+#endif
+  }
+
+  TEST(TestTimezone, testMissingTZDB) {
+    const char* tzDir = std::getenv("TZDIR");
+    std::string tzDirBackup;
+    if (tzDir != nullptr) {
+      // std::string creates a deepcopy of buffer, which avoids that
+      // unsetting environment variable wrecks pointer to tzDir
+      tzDirBackup = tzDir;
+      ASSERT_TRUE(delEnv("TZDIR"));
+    }
+    ASSERT_TRUE(setEnv("TZDIR", "/path/to/wrong/tzdb"));
+    EXPECT_THAT([]() { getTimezoneByName("America/Los_Angeles").getVersion(); },
+                testing::ThrowsMessage<TimezoneError>(testing::HasSubstr(
+                    "Time zone file /path/to/wrong/tzdb/America/Los_Angeles does not exist."
+                    " Please install IANA time zone database and set TZDIR env.")));
+    if (!tzDirBackup.empty()) {
+      ASSERT_TRUE(setEnv("TZDIR", tzDirBackup.c_str()));
+    } else {
+      ASSERT_TRUE(delEnv("TZDIR"));
+    }
+  }
+
+  TEST(TestTimezone, testTzdbFromCondaEnv) {
+    const char* tzDir = std::getenv("TZDIR");
+    // test only makes sense if TZDIR exists
+    if (tzDir != nullptr) {
+      std::string tzDirBackup = tzDir;
+      ASSERT_TRUE(delEnv("TZDIR"));
+
+      // remove "/share/zoneinfo" from TZDIR (as set through TZDATA_DIR in CI) to
+      // get the equivalent of CONDA_PREFIX, relative to the location of the tzdb
+      std::string condaPrefix(tzDirBackup);
+      condaPrefix += "/../..";
+      ASSERT_TRUE(setEnv("CONDA_PREFIX", condaPrefix.c_str()));
+
+      // small test sample to ensure tzbd loads with CONDA_PREFIX, even without TZDIR
+      const Timezone* zrh = &getTimezoneByName("Europe/Zurich");
+      EXPECT_EQ("CET", getVariantFromZone(*zrh, "2024-03-31 00:59:59"));
+      EXPECT_EQ("CEST", getVariantFromZone(*zrh, "2024-03-31 01:00:00"));
+      EXPECT_EQ("CEST", getVariantFromZone(*zrh, "2024-10-27 00:59:59"));
+      EXPECT_EQ("CET", getVariantFromZone(*zrh, "2024-10-27 01:00:00"));
+
+      // CONDA_PREFIX contains backslashes on windows; test that this doesn't blow up
+      std::replace(condaPrefix.begin(), condaPrefix.end(), '/', '\\');
+      ASSERT_TRUE(setEnv("CONDA_PREFIX", condaPrefix.c_str()));
+
+      // as above, but different timezone to avoid hitting cache
+      const Timezone* syd = &getTimezoneByName("Australia/Sydney");
+      EXPECT_EQ("AEDT", getVariantFromZone(*syd, "2024-04-06 15:59:59"));
+      EXPECT_EQ("AEST", getVariantFromZone(*syd, "2024-04-06 16:00:00"));
+      EXPECT_EQ("AEST", getVariantFromZone(*syd, "2024-10-05 15:59:59"));
+      EXPECT_EQ("AEDT", getVariantFromZone(*syd, "2024-10-05 16:00:00"));
+
+      // restore state of environment variables
+      ASSERT_TRUE(delEnv("CONDA_PREFIX"));
+      ASSERT_TRUE(setEnv("TZDIR", tzDirBackup.c_str()));
+    }
+  }
+
 }  // namespace orc

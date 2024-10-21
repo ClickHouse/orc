@@ -19,9 +19,11 @@ package org.apache.orc.impl;
 
 import org.apache.commons.lang3.builder.HashCodeBuilder;
 import org.apache.hadoop.fs.FSDataInputStream;
+import org.apache.hadoop.fs.FileRange;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.hive.common.io.DiskRangeList;
+import org.apache.hadoop.util.VersionInfo;
 import org.apache.orc.CompressionCodec;
 import org.apache.orc.DataReader;
 import org.apache.orc.OrcProto;
@@ -33,10 +35,13 @@ import org.slf4j.LoggerFactory;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.concurrent.ExecutionException;
+import java.util.function.IntFunction;
 import java.util.function.Supplier;
 
 /**
@@ -44,6 +49,8 @@ import java.util.function.Supplier;
  */
 public class RecordReaderUtils {
   private static final HadoopShims SHIMS = HadoopShimsFactory.get();
+  private static final boolean supportVectoredIO =
+      SHIMS.supportVectoredIO(VersionInfo.getVersion());
   private static final Logger LOG = LoggerFactory.getLogger(RecordReaderUtils.class);
 
   private static class DefaultDataReader implements DataReader {
@@ -103,8 +110,12 @@ public class RecordReaderUtils {
     public BufferChunkList readFileData(BufferChunkList range,
                                         boolean doForceDirect
                                         ) throws IOException {
-      RecordReaderUtils.readDiskRanges(file, zcr, range, doForceDirect, minSeekSize,
-                                       minSeekSizeTolerance);
+      if (supportVectoredIO && zcr == null) {
+        RecordReaderUtils.readDiskRangesVectored(file, range, doForceDirect);
+      } else {
+        RecordReaderUtils.readDiskRanges(file, zcr, range, doForceDirect,
+                                         minSeekSize, minSeekSizeTolerance);
+      }
       return range;
     }
 
@@ -131,9 +142,19 @@ public class RecordReaderUtils {
       return zcr != null;
     }
 
+    /**
+     * @deprecated Use {@link #releaseAllBuffers()} instead. This method was
+     * incorrectly used by upper level code and shouldn't be used anymore.
+     */
+    @Deprecated
     @Override
     public void releaseBuffer(ByteBuffer buffer) {
       zcr.releaseBuffer(buffer);
+    }
+
+    @Override
+    public void releaseAllBuffers() {
+      zcr.releaseAllBuffers();
     }
 
     @Override
@@ -374,7 +395,7 @@ public class RecordReaderUtils {
 
       // did we get the current range in a single read?
       if (currentOffset + currentBuffer.remaining() >= current.getEnd()) {
-        ByteBuffer copy = currentBuffer.duplicate();
+        ByteBuffer copy = currentBuffer.slice();
         copy.position((int) (current.getOffset() - currentOffset));
         copy.limit(copy.position() + current.getLength());
         current.setChunk(copy);
@@ -385,7 +406,7 @@ public class RecordReaderUtils {
                               ? ByteBuffer.allocateDirect(current.getLength())
                               : ByteBuffer.allocate(current.getLength());
         // we know that the range spans buffers
-        ByteBuffer copy = currentBuffer.duplicate();
+        ByteBuffer copy = currentBuffer.slice();
         // skip over the front matter
         copy.position((int) (current.getOffset() - currentOffset));
         result.put(copy);
@@ -394,11 +415,11 @@ public class RecordReaderUtils {
         currentBuffer = buffers.next();
         while (result.hasRemaining()) {
           if (result.remaining() > currentBuffer.remaining()) {
-            result.put(currentBuffer.duplicate());
+            result.put(currentBuffer.slice());
             currentOffset += currentBuffer.remaining();
             currentBuffer = buffers.next();
           } else {
-            copy = currentBuffer.duplicate();
+            copy = currentBuffer.slice();
             copy.limit(result.remaining());
             result.put(copy);
           }
@@ -543,6 +564,41 @@ public class RecordReaderUtils {
     }
   }
 
+  /**
+   * Read the list of ranges from the file by updating each range in the list
+   */
+  private static void readDiskRangesVectored(
+      FSDataInputStream fileInputStream,
+      BufferChunkList range,
+      boolean doForceDirect) throws IOException {
+    if (range == null) return;
+
+    IntFunction<ByteBuffer> allocate =
+        doForceDirect ? ByteBuffer::allocateDirect : ByteBuffer::allocate;
+
+    var fileRanges = new ArrayList<FileRange>();
+    var map = new HashMap<FileRange, BufferChunk>();
+    var cur = range.get();
+    while (cur != null) {
+      if (!cur.hasData()) {
+        var fileRange = FileRange.createFileRange(cur.getOffset(), cur.getLength());
+        fileRanges.add(fileRange);
+        map.put(fileRange, cur);
+      }
+      cur = (BufferChunk) cur.next;
+    }
+    fileInputStream.readVectored(fileRanges, allocate);
+
+    for (FileRange r : fileRanges) {
+      cur = map.get(r);
+      try {
+        cur.setChunk(r.getData().get());
+      } catch (InterruptedException | ExecutionException e) {
+        throw new RuntimeException(e);
+      }
+    }
+  }
+
   static HadoopShims.ZeroCopyReaderShim createZeroCopyShim(FSDataInputStream file,
       CompressionCodec codec, ByteBufferAllocatorPool pool) throws IOException {
     if ((codec == null || ((codec instanceof DirectDecompressionCodec) &&
@@ -573,8 +629,7 @@ public class RecordReaderUtils {
 
       @Override
       public boolean equals(Object rhs) {
-        if (rhs instanceof Key) {
-          Key o = (Key) rhs;
+        if (rhs instanceof Key o) {
           return 0 == compareTo(o);
         }
         return false;
@@ -760,29 +815,36 @@ public class RecordReaderUtils {
     }
 
     static ChunkReader create(BufferChunk from, BufferChunk to) {
-      long f = Integer.MAX_VALUE;
-      long e = Integer.MIN_VALUE;
+      long start = Long.MAX_VALUE;
+      long end = Long.MIN_VALUE;
 
-      long cf = Integer.MAX_VALUE;
-      long ef = Integer.MIN_VALUE;
-      int reqBytes = 0;
+      long currentStart = Long.MAX_VALUE;
+      long currentEnd = Long.MIN_VALUE;
+      long reqBytes = 0L;
 
       BufferChunk current = from;
       while (current != to.next) {
-        f = Math.min(f, current.getOffset());
-        e = Math.max(e, current.getEnd());
-        if (ef == Integer.MIN_VALUE || current.getOffset() <= ef) {
-          cf = Math.min(cf, current.getOffset());
-          ef = Math.max(ef, current.getEnd());
+        start = Math.min(start, current.getOffset());
+        end = Math.max(end, current.getEnd());
+        if (currentEnd == Long.MIN_VALUE || current.getOffset() <= currentEnd) {
+          currentStart = Math.min(currentStart, current.getOffset());
+          currentEnd = Math.max(currentEnd, current.getEnd());
         } else {
-          reqBytes += ef - cf;
-          cf = current.getOffset();
-          ef = current.getEnd();
+          reqBytes += currentEnd - currentStart;
+          currentStart = current.getOffset();
+          currentEnd = current.getEnd();
         }
         current = (BufferChunk) current.next;
       }
-      reqBytes += ef - cf;
-      return new ChunkReader(from, to, (int) (e - f), reqBytes);
+      reqBytes += currentEnd - currentStart;
+      if (reqBytes > IOUtils.MAX_ARRAY_SIZE) {
+        throw new IllegalArgumentException("invalid reqBytes value " + reqBytes + ",out of bounds " + IOUtils.MAX_ARRAY_SIZE);
+      }
+      long readBytes = end - start;
+      if (readBytes > IOUtils.MAX_ARRAY_SIZE) {
+        throw new IllegalArgumentException("invalid readBytes value " + readBytes + ",out of bounds " + IOUtils.MAX_ARRAY_SIZE);
+      }
+      return new ChunkReader(from, to, (int) readBytes, (int) reqBytes);
     }
 
     static ChunkReader create(BufferChunk from, int minSeekSize) {

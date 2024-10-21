@@ -28,7 +28,9 @@ import org.apache.hadoop.fs.Seekable;
 import org.apache.hadoop.hive.common.io.DiskRangeList;
 import org.apache.hadoop.hive.common.type.HiveDecimal;
 import org.apache.hadoop.hive.ql.exec.vector.BytesColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.DecimalColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.LongColumnVector;
+import org.apache.hadoop.hive.ql.exec.vector.StructColumnVector;
 import org.apache.hadoop.hive.ql.exec.vector.VectorizedRowBatch;
 import org.apache.hadoop.hive.ql.io.sarg.PredicateLeaf;
 import org.apache.hadoop.hive.ql.io.sarg.SearchArgument;
@@ -41,6 +43,7 @@ import org.apache.orc.ColumnStatistics;
 import org.apache.orc.CompressionCodec;
 import org.apache.orc.CompressionKind;
 import org.apache.orc.DataReader;
+import org.apache.orc.DoubleColumnStatistics;
 import org.apache.orc.OrcConf;
 import org.apache.orc.OrcFile;
 import org.apache.orc.OrcProto;
@@ -95,6 +98,7 @@ import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -2475,6 +2479,98 @@ public class TestRecordReaderImpl {
   }
 
   @Test
+  public void testStatisticsWithNoWrites() throws Exception {
+    Path testFilePath = new Path(workDir, "rowIndexStrideNegative.orc");
+    Configuration conf = new Configuration();
+    FileSystem fs = FileSystem.get(conf);
+    fs.delete(testFilePath, true);
+
+    TypeDescription schema = TypeDescription.fromString("struct<x:struct<z:double>,y:int>");
+    Writer writer = OrcFile.createWriter(
+        testFilePath,
+        OrcFile.writerOptions(conf).setSchema(schema));
+    VectorizedRowBatch batch = schema.createRowBatch();
+    StructColumnVector structColumnVector = (StructColumnVector) batch.cols[0];
+    LongColumnVector longColumnVector = (LongColumnVector) batch.cols[1];
+    structColumnVector.ensureSize(1024, false);
+    structColumnVector.noNulls = false;
+    for (int i = 0; i < 1024; i++) {
+      structColumnVector.isNull[i] = true;
+      longColumnVector.vector[i] = i;
+    }
+    batch.size = 1024;
+    writer.addRowBatch(batch);
+    batch.reset();
+    writer.close();
+
+    Reader reader = OrcFile.createReader(testFilePath,
+        OrcFile.readerOptions(conf).filesystem(fs));
+
+    try (RecordReader rr = reader.rows()) {
+      RecordReaderImpl rri = (RecordReaderImpl) rr;
+      // x.z id is 2, We just need to read this column
+      OrcIndex orcIndex = rri.readRowIndex(0,
+          new boolean[] { false, false, true, false },
+          new boolean[] { false, false, true, false });
+      OrcProto.RowIndex[] rowGroupIndex = orcIndex.getRowGroupIndex();
+      OrcProto.ColumnStatistics statistics = rowGroupIndex[2].getEntry(0).getStatistics();
+      OrcProto.ColumnEncoding encoding = OrcProto.ColumnEncoding.newBuilder()
+          .setKind(OrcProto.ColumnEncoding.Kind.DIRECT)
+          .build();
+      PredicateLeaf pred = createPredicateLeaf(
+          PredicateLeaf.Operator.EQUALS, PredicateLeaf.Type.FLOAT, "x.z", 1.0, null);
+
+      TruthValue truthValue = RecordReaderImpl.evaluatePredicateProto(
+          statistics,
+          pred, null, encoding, null,
+          CURRENT_WRITER, TypeDescription.createInt());
+
+      assertEquals(TruthValue.NO, truthValue);
+    }
+  }
+
+  @Test
+  public void testDoubleColumnWithoutDoubleStatistics() throws Exception {
+    // orc-file-no-double-statistic.orc is an orc file created by cudf with a schema of
+    // struct<x:double>, one row and a value of null.
+    // Test file source https://issues.apache.org/jira/projects/ORC/issues/ORC-1482
+    Path filePath = new Path(ClassLoader.getSystemResource("orc-file-no-double-statistic.orc")
+        .getPath());
+
+    Configuration conf = new Configuration();
+    FileSystem fs = FileSystem.get(conf);
+
+    Reader reader = OrcFile.createReader(filePath,
+        OrcFile.readerOptions(conf).filesystem(fs));
+
+    TypeDescription schema = TypeDescription.fromString("struct<x:double>");
+
+    assertEquals(schema, reader.getSchema());
+    assertFalse(reader.getStatistics()[0] instanceof DoubleColumnStatistics);
+
+    SearchArgument sarg = SearchArgumentFactory.newBuilder()
+        .isNull("x", PredicateLeaf.Type.FLOAT)
+        .build();
+
+    Reader.Options options = reader.options()
+        .searchArgument(sarg, new String[] {"x"})
+        .useSelected(true)
+        .allowSARGToFilter(true);
+
+    VectorizedRowBatch batch = schema.createRowBatch();
+    long rowCount = 0;
+    try (RecordReader rr = reader.rows(options)) {
+      assertTrue(rr.nextBatch(batch));
+      rowCount += batch.size;
+      assertFalse(rr.nextBatch(batch));
+      if (rr instanceof RecordReaderImpl) {
+        assertEquals(0, ((RecordReaderImpl) rr).getSargApp().getExceptionCount()[0]);
+      }
+    }
+    assertEquals(1, rowCount);
+  }
+
+  @Test
   public void testMissMinOrMaxInStatistics() {
     OrcProto.ColumnEncoding encoding = OrcProto.ColumnEncoding.newBuilder()
         .setKind(OrcProto.ColumnEncoding.Kind.DIRECT_V2)
@@ -2615,6 +2711,93 @@ public class TestRecordReaderImpl {
         assertEquals(value, strVector.toString(r), "row " + (r + base));
       }
       base += batch.size;
+    }
+  }
+
+  @Test
+  public void testHadoopVectoredIO() throws Exception {
+    Configuration conf = new Configuration();
+    Path filePath = new Path(TestVectorOrcFile.getFileFromClasspath("orc-file-11-format.orc"));
+
+    FileSystem localFileSystem = FileSystem.getLocal(conf);
+    FSDataInputStream fsDataInputStream = localFileSystem.open(filePath);
+
+    FileSystem spyLocalFileSystem = spy(localFileSystem);
+    FSDataInputStream spyFSDataInputStream = spy(fsDataInputStream);
+    when(spyLocalFileSystem.open(filePath)).thenReturn(spyFSDataInputStream);
+
+    Reader reader = OrcFile.createReader(filePath,
+        OrcFile.readerOptions(conf).filesystem(spyLocalFileSystem));
+    RecordReader recordReader = reader.rows(reader.options());
+    recordReader.close();
+
+    verify(spyFSDataInputStream, atLeastOnce()).readVectored(any(), any());
+  }
+
+  @Test
+  public  void testDecimalIsRepeatingFlag() throws IOException {
+    Configuration conf = new Configuration();
+    FileSystem fs = FileSystem.get(conf);
+    Path testFilePath = new Path(workDir, "testDecimalIsRepeatingFlag.orc");
+    fs.delete(testFilePath, true);
+
+    Configuration decimalConf = new Configuration(conf);
+    decimalConf.set(OrcConf.STRIPE_ROW_COUNT.getAttribute(), "1024");
+    decimalConf.set(OrcConf.ROWS_BETWEEN_CHECKS.getAttribute(), "1");
+    String typeStr = "decimal(20,10)";
+    TypeDescription schema = TypeDescription.fromString("struct<col1:" + typeStr + ">");
+    Writer w = OrcFile.createWriter(testFilePath, OrcFile.writerOptions(decimalConf).setSchema(schema));
+
+    VectorizedRowBatch b = schema.createRowBatch();
+    DecimalColumnVector f1 = (DecimalColumnVector) b.cols[0];
+    for (int i = 0; i < 1024; i++) {
+      f1.set(i, HiveDecimal.create("-119.4594594595"));
+    }
+    b.size = 1024;
+    w.addRowBatch(b);
+
+    b.reset();
+    for (int i = 0; i < 1024; i++) {
+      f1.set(i, HiveDecimal.create("9318.4351351351"));
+    }
+    b.size = 1024;
+    w.addRowBatch(b);
+
+    b.reset();
+    for (int i = 0; i < 1024; i++) {
+      f1.set(i, HiveDecimal.create("-4298.1513513514"));
+    }
+    b.size = 1024;
+    w.addRowBatch(b);
+
+    b.reset();
+    w.close();
+
+    Reader.Options options = new Reader.Options();
+    try (Reader reader = OrcFile.createReader(testFilePath, OrcFile.readerOptions(conf));
+         RecordReader rows = reader.rows(options)) {
+      VectorizedRowBatch batch = schema.createRowBatch();
+
+      rows.nextBatch(batch);
+      assertEquals(1024, batch.size);
+      assertFalse(batch.cols[0].isRepeating);
+      for (HiveDecimalWritable hiveDecimalWritable : ((DecimalColumnVector) batch.cols[0]).vector) {
+        assertEquals(HiveDecimal.create("-119.4594594595"), hiveDecimalWritable.getHiveDecimal());
+      }
+
+      rows.nextBatch(batch);
+      assertEquals(1024, batch.size);
+      assertFalse(batch.cols[0].isRepeating);
+      for (HiveDecimalWritable hiveDecimalWritable : ((DecimalColumnVector) batch.cols[0]).vector) {
+        assertEquals(HiveDecimal.create("9318.4351351351"), hiveDecimalWritable.getHiveDecimal());
+      }
+
+      rows.nextBatch(batch);
+      assertEquals(1024, batch.size);
+      assertFalse(batch.cols[0].isRepeating);
+      for (HiveDecimalWritable hiveDecimalWritable : ((DecimalColumnVector) batch.cols[0]).vector) {
+        assertEquals(HiveDecimal.create("-4298.1513513514"), hiveDecimalWritable.getHiveDecimal());
+      }
     }
   }
 }

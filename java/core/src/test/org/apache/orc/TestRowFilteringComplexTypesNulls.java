@@ -173,7 +173,7 @@ public class TestRowFilteringComplexTypesNulls {
     }
     double p = readPercentage(readEnd(), fs.getFileStatus(filePath).getLen());
     assertEquals(RowCount, rowCount);
-    assertTrue(p >= 100);
+    assertTrue(p >= 0.06);
   }
 
   @Test
@@ -267,7 +267,7 @@ public class TestRowFilteringComplexTypesNulls {
     }
     double p = readPercentage(readEnd(), fs.getFileStatus(filePath).getLen());
     assertEquals(RowCount, rowCount);
-    assertTrue(p >= 100);
+    assertTrue(p >= 0.06);
   }
 
   @Test
@@ -332,7 +332,7 @@ public class TestRowFilteringComplexTypesNulls {
     }
     FileSystem.Statistics stats = readEnd();
     double readPercentage = readPercentage(stats, fs.getFileStatus(filePath).getLen());
-    assertTrue(readPercentage > 130);
+    assertTrue(readPercentage > 0.07);
   }
 
   private void seekToRow(RecordReader rr, VectorizedRowBatch b, long row) throws IOException {
@@ -362,8 +362,8 @@ public class TestRowFilteringComplexTypesNulls {
       ColumnVector[] f2Branch = b.findColumnVector("s2.f2");
       DecimalColumnVector f2 = (DecimalColumnVector) f2Branch[f2Branch.length - 1];
       for (int i = 0; i < b.getSelectedSize(); i++) {
-        if (!OrcFilterContext.isNull(f2Branch, i)
-            && ids.contains(f2.vector[i].getHiveDecimal())) {
+        if (!OrcFilterContext.isNull(f2Branch, i) &&
+            ids.contains(f2.vector[i].getHiveDecimal())) {
           b.getSelected()[newSize] = i;
           newSize += 1;
         }

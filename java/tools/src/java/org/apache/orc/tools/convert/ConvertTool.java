@@ -44,7 +44,7 @@ import java.util.List;
 import java.util.zip.GZIPInputStream;
 
 /**
- * A conversion tool to convert CSV or JSON files into ORC files.
+ * A conversion tool to convert CSV, JSON OR ORC files into ORC files.
  */
 public class ConvertTool {
   static final String DEFAULT_TIMESTAMP_FORMAT =
@@ -79,6 +79,7 @@ public class ConvertTool {
         Reader reader = OrcFile.createReader(file.path,
             OrcFile.readerOptions(conf)
                 .filesystem(file.filesystem));
+        reader.close();
         if (files.size() == 1) {
           return reader.getSchema();
         }
@@ -198,7 +199,7 @@ public class ConvertTool {
     this.csvHeaderLines = getIntOption(opts, 'H', 0);
     this.csvNullString = opts.getOptionValue('n', "");
     this.timestampFormat = opts.getOptionValue("t", DEFAULT_TIMESTAMP_FORMAT);
-    this.bloomFilterColumns = opts.getOptionValue('b', null);
+    this.bloomFilterColumns = opts.getOptionValue('b');
     this.unionTag = opts.getOptionValue("union-tag", "tag");
     this.unionValue = opts.getOptionValue("union-value", "value");
     String outFilename = opts.hasOption('o')

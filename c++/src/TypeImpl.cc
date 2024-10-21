@@ -29,54 +29,54 @@ namespace orc {
     // PASS
   }
 
-  TypeImpl::TypeImpl(TypeKind _kind) {
-    parent = nullptr;
-    columnId = -1;
-    maximumColumnId = -1;
-    kind = _kind;
-    maxLength = 0;
-    precision = 0;
-    scale = 0;
-    subtypeCount = 0;
+  TypeImpl::TypeImpl(TypeKind kind) {
+    parent_ = nullptr;
+    columnId_ = -1;
+    maximumColumnId_ = -1;
+    kind_ = kind;
+    maxLength_ = 0;
+    precision_ = 0;
+    scale_ = 0;
+    subtypeCount_ = 0;
   }
 
-  TypeImpl::TypeImpl(TypeKind _kind, uint64_t _maxLength) {
-    parent = nullptr;
-    columnId = -1;
-    maximumColumnId = -1;
-    kind = _kind;
-    maxLength = _maxLength;
-    precision = 0;
-    scale = 0;
-    subtypeCount = 0;
+  TypeImpl::TypeImpl(TypeKind kind, uint64_t maxLength) {
+    parent_ = nullptr;
+    columnId_ = -1;
+    maximumColumnId_ = -1;
+    kind_ = kind;
+    maxLength_ = maxLength;
+    precision_ = 0;
+    scale_ = 0;
+    subtypeCount_ = 0;
   }
 
-  TypeImpl::TypeImpl(TypeKind _kind, uint64_t _precision, uint64_t _scale) {
-    parent = nullptr;
-    columnId = -1;
-    maximumColumnId = -1;
-    kind = _kind;
-    maxLength = 0;
-    precision = _precision;
-    scale = _scale;
-    subtypeCount = 0;
+  TypeImpl::TypeImpl(TypeKind kind, uint64_t precision, uint64_t scale) {
+    parent_ = nullptr;
+    columnId_ = -1;
+    maximumColumnId_ = -1;
+    kind_ = kind;
+    maxLength_ = 0;
+    precision_ = precision;
+    scale_ = scale;
+    subtypeCount_ = 0;
   }
 
   uint64_t TypeImpl::assignIds(uint64_t root) const {
-    columnId = static_cast<int64_t>(root);
+    columnId_ = static_cast<int64_t>(root);
     uint64_t current = root + 1;
-    for (uint64_t i = 0; i < subtypeCount; ++i) {
-      current = dynamic_cast<TypeImpl*>(subTypes[i].get())->assignIds(current);
+    for (uint64_t i = 0; i < subtypeCount_; ++i) {
+      current = dynamic_cast<TypeImpl*>(subTypes_[i].get())->assignIds(current);
     }
-    maximumColumnId = static_cast<int64_t>(current) - 1;
+    maximumColumnId_ = static_cast<int64_t>(current) - 1;
     return current;
   }
 
   void TypeImpl::ensureIdAssigned() const {
-    if (columnId == -1) {
+    if (columnId_ == -1) {
       const TypeImpl* root = this;
-      while (root->parent != nullptr) {
-        root = root->parent;
+      while (root->parent_ != nullptr) {
+        root = root->parent_;
       }
       root->assignIds(0);
     }
@@ -84,94 +84,94 @@ namespace orc {
 
   uint64_t TypeImpl::getColumnId() const {
     ensureIdAssigned();
-    return static_cast<uint64_t>(columnId);
+    return static_cast<uint64_t>(columnId_);
   }
 
   uint64_t TypeImpl::getMaximumColumnId() const {
     ensureIdAssigned();
-    return static_cast<uint64_t>(maximumColumnId);
+    return static_cast<uint64_t>(maximumColumnId_);
   }
 
   TypeKind TypeImpl::getKind() const {
-    return kind;
+    return kind_;
   }
 
   uint64_t TypeImpl::getSubtypeCount() const {
-    return subtypeCount;
+    return subtypeCount_;
   }
 
   const Type* TypeImpl::getSubtype(uint64_t i) const {
-    return subTypes[i].get();
+    return subTypes_[i].get();
   }
 
   const std::string& TypeImpl::getFieldName(uint64_t i) const {
-    return fieldNames[i];
+    return fieldNames_[i];
   }
 
   uint64_t TypeImpl::getMaximumLength() const {
-    return maxLength;
+    return maxLength_;
   }
 
   uint64_t TypeImpl::getPrecision() const {
-    return precision;
+    return precision_;
   }
 
   uint64_t TypeImpl::getScale() const {
-    return scale;
+    return scale_;
   }
 
   Type& TypeImpl::setAttribute(const std::string& key, const std::string& value) {
-    attributes[key] = value;
+    attributes_[key] = value;
     return *this;
   }
 
   bool TypeImpl::hasAttributeKey(const std::string& key) const {
-    return attributes.find(key) != attributes.end();
+    return attributes_.find(key) != attributes_.end();
   }
 
   Type& TypeImpl::removeAttribute(const std::string& key) {
-    auto it = attributes.find(key);
-    if (it == attributes.end()) {
+    auto it = attributes_.find(key);
+    if (it == attributes_.end()) {
       throw std::range_error("Key not found: " + key);
     }
-    attributes.erase(it);
+    attributes_.erase(it);
     return *this;
   }
 
   std::vector<std::string> TypeImpl::getAttributeKeys() const {
     std::vector<std::string> ret;
-    ret.reserve(attributes.size());
-    for (auto& attribute : attributes) {
+    ret.reserve(attributes_.size());
+    for (auto& attribute : attributes_) {
       ret.push_back(attribute.first);
     }
     return ret;
   }
 
   std::string TypeImpl::getAttributeValue(const std::string& key) const {
-    auto it = attributes.find(key);
-    if (it == attributes.end()) {
+    auto it = attributes_.find(key);
+    if (it == attributes_.end()) {
       throw std::range_error("Key not found: " + key);
     }
     return it->second;
   }
 
-  void TypeImpl::setIds(uint64_t _columnId, uint64_t _maxColumnId) {
-    columnId = static_cast<int64_t>(_columnId);
-    maximumColumnId = static_cast<int64_t>(_maxColumnId);
+  void TypeImpl::setIds(uint64_t columnId, uint64_t maxColumnId) {
+    columnId_ = static_cast<int64_t>(columnId);
+    maximumColumnId_ = static_cast<int64_t>(maxColumnId);
   }
 
   void TypeImpl::addChildType(std::unique_ptr<Type> childType) {
     TypeImpl* child = dynamic_cast<TypeImpl*>(childType.get());
-    subTypes.push_back(std::move(childType));
+    subTypes_.push_back(std::move(childType));
     if (child != nullptr) {
-      child->parent = this;
+      child->parent_ = this;
     }
-    subtypeCount += 1;
+    subtypeCount_ += 1;
   }
 
   Type* TypeImpl::addStructField(const std::string& fieldName, std::unique_ptr<Type> fieldType) {
     addChildType(std::move(fieldType));
-    fieldNames.push_back(fieldName);
+    fieldNames_.push_back(fieldName);
     return this;
   }
 
@@ -190,7 +190,7 @@ namespace orc {
   }
 
   std::string TypeImpl::toString() const {
-    switch (static_cast<int64_t>(kind)) {
+    switch (static_cast<int64_t>(kind_)) {
       case BOOLEAN:
         return "boolean";
       case BYTE:
@@ -214,20 +214,20 @@ namespace orc {
       case TIMESTAMP_INSTANT:
         return "timestamp with local time zone";
       case LIST:
-        return "array<" + (subTypes[0] ? subTypes[0]->toString() : "void") + ">";
+        return "array<" + (subTypes_[0] ? subTypes_[0]->toString() : "void") + ">";
       case MAP:
-        return "map<" + (subTypes[0] ? subTypes[0]->toString() : "void") + "," +
-               (subTypes[1] ? subTypes[1]->toString() : "void") + ">";
+        return "map<" + (subTypes_[0] ? subTypes_[0]->toString() : "void") + "," +
+               (subTypes_[1] ? subTypes_[1]->toString() : "void") + ">";
       case STRUCT: {
         std::string result = "struct<";
-        for (size_t i = 0; i < subTypes.size(); ++i) {
+        for (size_t i = 0; i < subTypes_.size(); ++i) {
           if (i != 0) {
             result += ",";
           }
-          if (isUnquotedFieldName(fieldNames[i])) {
-            result += fieldNames[i];
+          if (isUnquotedFieldName(fieldNames_[i])) {
+            result += fieldNames_[i];
           } else {
-            std::string name(fieldNames[i]);
+            std::string name(fieldNames_[i]);
             size_t pos = 0;
             while ((pos = name.find("`", pos)) != std::string::npos) {
               name.replace(pos, 1, "``");
@@ -238,37 +238,37 @@ namespace orc {
             result += "`";
           }
           result += ":";
-          result += subTypes[i]->toString();
+          result += subTypes_[i]->toString();
         }
         result += ">";
         return result;
       }
       case UNION: {
         std::string result = "uniontype<";
-        for (size_t i = 0; i < subTypes.size(); ++i) {
+        for (size_t i = 0; i < subTypes_.size(); ++i) {
           if (i != 0) {
             result += ",";
           }
-          result += subTypes[i]->toString();
+          result += subTypes_[i]->toString();
         }
         result += ">";
         return result;
       }
       case DECIMAL: {
         std::stringstream result;
-        result << "decimal(" << precision << "," << scale << ")";
+        result << "decimal(" << precision_ << "," << scale_ << ")";
         return result.str();
       }
       case DATE:
         return "date";
       case VARCHAR: {
         std::stringstream result;
-        result << "varchar(" << maxLength << ")";
+        result << "varchar(" << maxLength_ << ")";
         return result.str();
       }
       case CHAR: {
         std::stringstream result;
-        result << "char(" << maxLength << ")";
+        result << "char(" << maxLength_ << ")";
         return result.str();
       }
       default:
@@ -285,7 +285,7 @@ namespace orc {
   std::unique_ptr<ColumnVectorBatch> TypeImpl::createRowBatch(uint64_t capacity,
                                                               MemoryPool& memoryPool, bool encoded,
                                                               bool useTightNumericVector) const {
-    switch (static_cast<int64_t>(kind)) {
+    switch (static_cast<int64_t>(kind_)) {
       case BOOLEAN:
         if (useTightNumericVector) {
           return std::make_unique<ByteVectorBatch>(capacity, memoryPool);
@@ -337,7 +337,7 @@ namespace orc {
                   ->createRowBatch(capacity, memoryPool, encoded, useTightNumericVector)
                   .release());
         }
-        return std::move(result);
+        return result;
       }
 
       case LIST: {
@@ -346,7 +346,7 @@ namespace orc {
           result->elements =
               getSubtype(0)->createRowBatch(capacity, memoryPool, encoded, useTightNumericVector);
         }
-        return std::move(result);
+        return result;
       }
 
       case MAP: {
@@ -359,7 +359,7 @@ namespace orc {
           result->elements =
               getSubtype(1)->createRowBatch(capacity, memoryPool, encoded, useTightNumericVector);
         }
-        return std::move(result);
+        return result;
       }
 
       case DECIMAL: {
@@ -378,7 +378,7 @@ namespace orc {
                   ->createRowBatch(capacity, memoryPool, encoded, useTightNumericVector)
                   .release());
         }
-        return std::move(result);
+        return result;
       }
 
       default:
@@ -405,14 +405,14 @@ namespace orc {
   std::unique_ptr<Type> createListType(std::unique_ptr<Type> elements) {
     auto result = std::make_unique<TypeImpl>(LIST);
     result->addChildType(std::move(elements));
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> createMapType(std::unique_ptr<Type> key, std::unique_ptr<Type> value) {
     auto result = std::make_unique<TypeImpl>(MAP);
     result->addChildType(std::move(key));
     result->addChildType(std::move(value));
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> createUnionType() {
@@ -440,7 +440,7 @@ namespace orc {
 
       case proto::Type_Kind_CHAR:
       case proto::Type_Kind_VARCHAR:
-        ret = std::make_unique<TypeImpl>(static_cast<TypeKind>(type.kind()), type.maximumlength());
+        ret = std::make_unique<TypeImpl>(static_cast<TypeKind>(type.kind()), type.maximum_length());
         break;
 
       case proto::Type_Kind_DECIMAL:
@@ -465,11 +465,11 @@ namespace orc {
 
       case proto::Type_Kind_STRUCT: {
         ret = std::make_unique<TypeImpl>(STRUCT);
-        if (type.subtypes_size() > type.fieldnames_size())
-          throw ParseError("Illegal STRUCT type that contains less fieldnames than subtypes");
+        if (type.subtypes_size() > type.field_names_size())
+          throw ParseError("Illegal STRUCT type that contains less field_names than subtypes");
         for (int i = 0; i < type.subtypes_size(); ++i) {
           ret->addStructField(
-              type.fieldnames(i),
+              type.field_names(i),
               convertType(footer.types(static_cast<int>(type.subtypes(i))), footer));
         }
         break;
@@ -567,7 +567,7 @@ namespace orc {
       const auto& value = fileType->getAttributeValue(key);
       result->setAttribute(key, value);
     }
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> Type::buildTypeFromString(const std::string& input) {
@@ -590,7 +590,7 @@ namespace orc {
       throw std::logic_error("Array type must contain exactly one sub type.");
     }
     result->addChildType(std::move(res.first));
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> TypeImpl::parseMapType(const std::string& input, size_t start, size_t end) {
@@ -608,7 +608,7 @@ namespace orc {
     }
     result->addChildType(std::move(key.first));
     result->addChildType(std::move(val.first));
-    return std::move(result);
+    return result;
   }
 
   std::pair<std::string, size_t> TypeImpl::parseName(const std::string& input, const size_t start,
@@ -660,7 +660,8 @@ namespace orc {
       std::pair<std::string, size_t> nameRes = parseName(input, pos, end);
       pos = nameRes.second;
       if (input[pos] != ':') {
-        throw std::logic_error("Invalid struct type. No field name set.");
+        throw std::logic_error("Invalid struct type. Field name can not contain '" +
+                               std::string(1, input[pos]) + "'.");
       }
       std::pair<std::unique_ptr<Type>, size_t> typeRes = TypeImpl::parseType(input, ++pos, end);
       result->addStructField(nameRes.first, std::move(typeRes.first));
@@ -671,7 +672,7 @@ namespace orc {
       ++pos;
     }
 
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> TypeImpl::parseUnionType(const std::string& input, size_t start,
@@ -691,7 +692,7 @@ namespace orc {
       ++pos;
     }
 
-    return std::move(result);
+    return result;
   }
 
   std::unique_ptr<Type> TypeImpl::parseDecimalType(const std::string& input, size_t start,

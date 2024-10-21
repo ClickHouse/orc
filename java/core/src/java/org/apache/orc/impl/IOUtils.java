@@ -31,6 +31,11 @@ public final class IOUtils {
   public static final int DEFAULT_BUFFER_SIZE = 8192;
 
   /**
+   * The maximum size of array to allocate, value being the same as {@link java.util.Hashtable}
+   */
+  public static final int MAX_ARRAY_SIZE = Integer.MAX_VALUE - 8;
+
+  /**
    * Returns a new byte array of size {@link #DEFAULT_BUFFER_SIZE}.
    *
    * @return a new byte array of size {@link #DEFAULT_BUFFER_SIZE}.
@@ -124,8 +129,8 @@ public final class IOUtils {
     }
     /*
      * N.B. no need to synchronize access to SKIP_BYTE_BUFFER: - we don't care if the buffer is created multiple
-     * times (the data is ignored) - we always use the same size buffer, so if it it is recreated it will still be
-     * OK (if the buffer size were variable, we would need to synch. to ensure some other thread did not create a
+     * times (the data is ignored) - we always use the same size buffer, so if it is recreated it will still be
+     * OK (if the buffer size were variable, we would need to sync to ensure some other thread did not create a
      * smaller one)
      */
     long remain = toSkip;

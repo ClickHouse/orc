@@ -20,6 +20,7 @@
 
 #include "Adaptor.hh"
 #include "orc/Exceptions.hh"
+#include "orc/MemoryPool.hh"
 
 #include <cstdlib>
 #include <iostream>
@@ -33,6 +34,7 @@ namespace orc {
         notNull(pool, cap),
         hasNulls(false),
         isEncoded(false),
+        dictionaryDecoded(false),
         memoryPool(pool) {
     std::memset(notNull.data(), 1, capacity);
   }
@@ -60,13 +62,20 @@ namespace orc {
     return false;
   }
 
+  void ColumnVectorBatch::decodeDictionary() {
+    if (dictionaryDecoded) return;
+
+    decodeDictionaryImpl();
+    dictionaryDecoded = true;
+  }
+
   StringDictionary::StringDictionary(MemoryPool& pool)
       : dictionaryBlob(pool), dictionaryOffset(pool) {
     // PASS
   }
 
-  EncodedStringVectorBatch::EncodedStringVectorBatch(uint64_t _capacity, MemoryPool& pool)
-      : StringVectorBatch(_capacity, pool), dictionary(), index(pool, _capacity) {
+  EncodedStringVectorBatch::EncodedStringVectorBatch(uint64_t capacity, MemoryPool& pool)
+      : StringVectorBatch(capacity, pool), dictionary(), index(pool, capacity) {
     // PASS
   }
 
@@ -87,10 +96,21 @@ namespace orc {
     }
   }
 
-  StringVectorBatch::StringVectorBatch(uint64_t _capacity, MemoryPool& pool)
-      : ColumnVectorBatch(_capacity, pool),
-        data(pool, _capacity),
-        length(pool, _capacity),
+  void EncodedStringVectorBatch::decodeDictionaryImpl() {
+    size_t n = index.size();
+    resize(n);
+
+    for (size_t i = 0; i < n; ++i) {
+      if (!hasNulls || notNull[i]) {
+        dictionary->getValueByIndex(index[i], data[i], length[i]);
+      }
+    }
+  }
+
+  StringVectorBatch::StringVectorBatch(uint64_t capacity, MemoryPool& pool)
+      : ColumnVectorBatch(capacity, pool),
+        data(pool, capacity),
+        length(pool, capacity),
         blob(pool) {
     // PASS
   }
@@ -173,9 +193,15 @@ namespace orc {
     return false;
   }
 
+  void StructVectorBatch::decodeDictionaryImpl() {
+    for (const auto& field : fields) {
+      field->decodeDictionary();
+    }
+  }
+
   ListVectorBatch::ListVectorBatch(uint64_t cap, MemoryPool& pool)
       : ColumnVectorBatch(cap, pool), offsets(pool, cap + 1) {
-    // PASS
+    offsets.zeroOut();
   }
 
   ListVectorBatch::~ListVectorBatch() {
@@ -210,9 +236,13 @@ namespace orc {
     return true;
   }
 
+  void ListVectorBatch::decodeDictionaryImpl() {
+    elements->decodeDictionary();
+  }
+
   MapVectorBatch::MapVectorBatch(uint64_t cap, MemoryPool& pool)
       : ColumnVectorBatch(cap, pool), offsets(pool, cap + 1) {
-    // PASS
+    offsets.zeroOut();
   }
 
   MapVectorBatch::~MapVectorBatch() {
@@ -250,9 +280,20 @@ namespace orc {
     return true;
   }
 
+  void MapVectorBatch::decodeDictionaryImpl() {
+    if (keys) {
+      keys->decodeDictionary();
+    }
+
+    if (elements) {
+      elements->decodeDictionary();
+    }
+  }
+
   UnionVectorBatch::UnionVectorBatch(uint64_t cap, MemoryPool& pool)
       : ColumnVectorBatch(cap, pool), tags(pool, cap), offsets(pool, cap) {
-    // PASS
+    tags.zeroOut();
+    offsets.zeroOut();
   }
 
   UnionVectorBatch::~UnionVectorBatch() {
@@ -306,6 +347,12 @@ namespace orc {
       }
     }
     return false;
+  }
+
+  void UnionVectorBatch::decodeDictionaryImpl() {
+    for (const auto& child : children) {
+      child->decodeDictionary();
+    }
   }
 
   Decimal64VectorBatch::Decimal64VectorBatch(uint64_t cap, MemoryPool& pool)
@@ -381,7 +428,7 @@ namespace orc {
                                  readScales.capacity() * sizeof(int64_t));
   }
 
-  Decimal::Decimal(const Int128& _value, int32_t _scale) : value(_value), scale(_scale) {
+  Decimal::Decimal(const Int128& value, int32_t scale) : value(value), scale(scale) {
     // PASS
   }
 
@@ -406,8 +453,8 @@ namespace orc {
     return value.toDecimalString(scale, trimTrailingZeros);
   }
 
-  TimestampVectorBatch::TimestampVectorBatch(uint64_t _capacity, MemoryPool& pool)
-      : ColumnVectorBatch(_capacity, pool), data(pool, _capacity), nanoseconds(pool, _capacity) {
+  TimestampVectorBatch::TimestampVectorBatch(uint64_t capacity, MemoryPool& pool)
+      : ColumnVectorBatch(capacity, pool), data(pool, capacity), nanoseconds(pool, capacity) {
     // PASS
   }
 

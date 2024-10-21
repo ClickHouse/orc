@@ -52,8 +52,9 @@ public enum OrcConf {
   BLOCK_PADDING("orc.block.padding", "hive.exec.orc.default.block.padding",
       true,
       "Define whether stripes should be padded to the HDFS block boundaries."),
-  COMPRESS("orc.compress", "hive.exec.orc.default.compress", "ZLIB",
-      "Define the default compression codec for ORC file"),
+  COMPRESS("orc.compress", "hive.exec.orc.default.compress", "ZSTD",
+      "Define the default compression codec for ORC file. " +
+          "It can be NONE, ZLIB, SNAPPY, LZO, LZ4, ZSTD, BROTLI."),
   WRITE_FORMAT("orc.write.format", "hive.exec.orc.write.format", "0.12",
       "Define the version of the file to write. Possible values are 0.11 and\n"+
           " 0.12. If this parameter is not defined, ORC will use the run\n" +
@@ -72,6 +73,14 @@ public enum OrcConf {
       "Define the compression strategy to use while writing data.\n" +
           "This changes the compression level of higher level compression\n" +
           "codec (like ZLIB)."),
+  COMPRESSION_ZSTD_LEVEL("orc.compression.zstd.level",
+      "hive.exec.orc.compression.zstd.level", 3,
+      "Define the compression level to use with ZStandard codec "
+          + "while writing data. The valid range is 1~22"),
+  COMPRESSION_ZSTD_WINDOWLOG("orc.compression.zstd.windowlog",
+      "hive.exec.orc.compression.zstd.windowlog", 0,
+      "Set the maximum allowed back-reference distance for "
+          + "ZStandard codec, expressed as power of 2."),
   BLOCK_PADDING_TOLERANCE("orc.block.padding.tolerance",
       "hive.exec.orc.block.padding.tolerance", 0.05,
       "Define the tolerance for block padding as a decimal fraction of\n" +
@@ -123,7 +132,7 @@ public enum OrcConf {
       "", "List of columns to create bloom filters for when writing."),
   BLOOM_FILTER_WRITE_VERSION("orc.bloom.filter.write.version",
       "orc.bloom.filter.write.version", OrcFile.BloomFilterVersion.UTF8.toString(),
-      "Which version of the bloom filters should we write.\n" +
+      "(Deprecated) Which version of the bloom filters should we write.\n" +
           "The choices are:\n" +
           "  original - writes two versions of the bloom filters for use by\n" +
           "             both old and new readers.\n" +
@@ -163,7 +172,7 @@ public enum OrcConf {
       "Hive 2.1."),
   FORCE_POSITIONAL_EVOLUTION_LEVEL("orc.force.positional.evolution.level",
       "orc.force.positional.evolution.level", 1,
-      "Require schema evolution to match the the defined no. of level columns using position\n" +
+      "Require schema evolution to match the defined no. of level columns using position\n" +
           "rather than column names. This provides backwards compatibility with Hive 2.1."),
   ROWS_BETWEEN_CHECKS("orc.rows.between.memory.checks", "orc.rows.between.memory.checks", 5000,
     "How often should MemoryManager check the memory sizes? Measured in rows\n" +
@@ -219,7 +228,7 @@ public enum OrcConf {
                          + "optimization"),
   ORC_MIN_DISK_SEEK_SIZE_TOLERANCE("orc.min.disk.seek.size.tolerance",
                           "orc.min.disk.seek.size.tolerance", 0.00,
-                          "Define the tolerance for for extra bytes read as a result of "
+                          "Define the tolerance for extra bytes read as a result of "
                           + "orc.min.disk.seek.size. If the "
                           + "(bytesRead - bytesNeeded) / bytesNeeded is greater than this "
                           + "threshold then extra work is performed to drop the extra bytes from "

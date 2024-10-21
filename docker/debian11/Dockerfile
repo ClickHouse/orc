@@ -18,8 +18,11 @@
 #
 
 FROM debian:bullseye
-LABEL maintainer="Apache ORC project <dev@orc.apache.org>"
-ARG jdk=8
+LABEL org.opencontainers.image.authors="Apache ORC project <dev@orc.apache.org>"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.ref.name="Apache ORC on Debian 11"
+LABEL org.opencontainers.image.version=""
+ARG jdk=17
 
 RUN apt-get update
 RUN apt-get install -y \
@@ -31,21 +34,8 @@ RUN apt-get install -y \
   libssl-dev \
   make \
   curl \
-  maven; \
-  if [ "${jdk}" = "8" ] ; then \
-    apt-get install -y \
-      gnupg2 \
-      software-properties-common \
-      wget; \
-    wget -qO - https://adoptopenjdk.jfrog.io/adoptopenjdk/api/gpg/key/public | apt-key add -; \
-    add-apt-repository --yes https://adoptopenjdk.jfrog.io/adoptopenjdk/deb/ && \
-    apt-get update && \
-    apt-get install -y adoptopenjdk-8-hotspot && \
-    update-alternatives --set java $(update-alternatives --list java | grep ${jdk}) && \
-    update-alternatives --set javac $(update-alternatives --list javac | grep ${jdk}); \
-  else \
-    apt-get install -y openjdk-${jdk}-jdk; \
-  fi
+  maven \
+  openjdk-${jdk}-jdk;
 
 WORKDIR /root
 

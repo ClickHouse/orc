@@ -11,11 +11,13 @@ supports both the local file system and HDFS.
 
 The subcommands for the tools are:
 
-  * convert (since ORC 1.4) - convert JSON/CSV files to ORC
+  * check (since ORC 2.0.1) - check the index of the specified column
+  * convert (since ORC 1.4) - convert CSV/JSON/ORC files to ORC
   * count (since ORC 1.6) - recursively find *.orc and print the number of rows
   * data - print the data of an ORC file
   * json-schema (since ORC 1.4) - determine the schema of JSON documents
   * key (since ORC 1.5) - print information about the encryption keys
+  * merge (since ORC 2.0.1) - merge multiple ORC files into a single ORC file
   * meta - print the metadata of an ORC file
   * scan (since ORC 1.3) - scan the data for benchmarking
   * sizes (since ORC 1.7.2) - list size on disk of each column
@@ -26,10 +28,28 @@ The command line looks like:
 ~~~ shell
 % java -jar orc-tools-X.Y.Z-uber.jar <sub-command> <args>
 ~~~
+## Java Check
+
+The check command can check whether the specified value of the column specified by multiple ORC files can be filtered.
+
+Check statistics and bloom filter index on x column.
+~~~ shell
+% java -jar orc-tools-X.Y.Z-uber.jar check --type predicate /path/to/example.orc --values 1234 --values 5566 --column x
+~~~
+
+Check statistics on x column.
+~~~ shell
+% java -jar orc-tools-X.Y.Z-uber.jar check --type stat /path/to/example.orc --values 1234 --values 5566 --column x
+~~~
+
+Check bloom filter index on x column.
+~~~ shell
+% java -jar orc-tools-X.Y.Z-uber.jar check --type bloom-filter /path/to/example.orc --values 1234 --values 5566 --column x
+~~~
 
 ## Java Convert
 
-The convert command reads several JSON/CSV files and converts them into a
+The convert command reads several CSV/JSON/ORC files and converts them into a
 single ORC file.
 
 `-b,--bloomFilterColumns <columns>`
@@ -121,6 +141,9 @@ equivalent to the Hive ORC File Dump command.
 
 `--backup-path <path>`
   : when used with --recover specifies the path where the recovered file is written (default: /tmp)
+
+`--column-type`
+  : Print the column id, name and type of each column
 
 `-d,--data`
   : Should the data be printed
@@ -328,6 +351,15 @@ Percent  Bytes/Row  Name
   0.30   0.01       _index
   0.25   0.01       x
   0.19   0.01       _stripe_footer
+______________________________________________________________________
+~~~
+
+## Java Merge
+
+The merge command can merge multiple ORC files that all have the same schema into a single ORC file.
+
+~~~ shell
+% java -jar orc-tools-X.Y.Z-uber.jar merge --output /path/to/merged.orc /path/to/input_orc/
 ______________________________________________________________________
 ~~~
 

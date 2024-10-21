@@ -27,10 +27,11 @@ project(ORC C CXX)
 
 # Version number of package
 SET(CPACK_PACKAGE_VERSION_MAJOR "2")
-SET(CPACK_PACKAGE_VERSION_MINOR "0")
+SET(CPACK_PACKAGE_VERSION_MINOR "1")
 SET(CPACK_PACKAGE_VERSION_PATCH "0-SNAPSHOT")
 SET(ORC_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
-set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/cmake_modules")
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modules")
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON) # For clang-tidy.
 
 option (BUILD_JAVA
     "Include ORC Java library in the build process"
@@ -42,7 +43,7 @@ option (ANALYZE_JAVA
 
 option (BUILD_LIBHDFSPP
     "Include LIBHDFSPP library in the build process"
-     ON)
+     OFF)
 
 option(BUILD_CPP_TESTS
     "Build the googletest unit tests"
@@ -75,6 +76,10 @@ option(BUILD_CPP_ENABLE_METRICS
 option(BUILD_ENABLE_AVX512
     "Enable build with AVX512 at compile time"
     OFF)
+
+option(ORC_PACKAGE_KIND
+    "Arbitrary string that identifies the kind of package"
+    "")
 
 # Make sure that a build type is selected
 if (NOT CMAKE_BUILD_TYPE)
@@ -114,43 +119,22 @@ if (NOT MSVC)
 endif ()
 message(STATUS "compiler ${CMAKE_CXX_COMPILER_ID} version ${CMAKE_CXX_COMPILER_VERSION}")
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  if (CMAKE_CXX_COMPILER_VERSION STREQUAL "" OR
-      CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5.0")
+  if (CMAKE_CXX_COMPILER_VERSION STREQUAL "" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5.0")
     message(FATAL_ERROR "A c++17-compliant compiler is required, please use at least Clang 5")
   else ()
     set (CXX17_FLAGS "-std=c++17")
   endif ()
-  set (WARN_FLAGS "-Weverything -Wno-c++98-compat -Wno-missing-prototypes")
-  set (WARN_FLAGS "${WARN_FLAGS} -Wno-c++98-compat-pedantic -Wno-padded")
-  set (WARN_FLAGS "${WARN_FLAGS} -Wno-covered-switch-default")
-  set (WARN_FLAGS "${WARN_FLAGS} -Wno-missing-noreturn -Wno-unknown-pragmas")
-  set (WARN_FLAGS "${WARN_FLAGS} -Wno-gnu-zero-variadic-macro-arguments")
-  set (WARN_FLAGS "${WARN_FLAGS} -Wno-conversion")
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "14.0")
-    set (WARN_FLAGS "${WARN_FLAGS} -Wno-unused-macros")
-  endif()
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "13.0")
-    set (WARN_FLAGS "${WARN_FLAGS} -Wno-reserved-identifier -Wno-suggest-destructor-override -Wno-suggest-override")
-  endif()
-  if (CMAKE_HOST_APPLE AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "12.0")
-    set (WARN_FLAGS "${WARN_FLAGS} -Wno-c++2a-compat -Wno-unknown-warning-option -Wno-suggest-override -Wno-suggest-destructor-override")
-  elseif (CMAKE_HOST_APPLE AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "11.0")
-    set (WARN_FLAGS "${WARN_FLAGS} -Wno-c++2a-compat")
-  endif ()
+  set (WARN_FLAGS "-Wall -Wextra")
   if (STOP_BUILD_ON_WARNING)
     set (WARN_FLAGS "${WARN_FLAGS} -Werror")
   endif ()
 elseif (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if (CMAKE_CXX_COMPILER_VERSION STREQUAL "" OR
-      CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5.0")
+  if (CMAKE_CXX_COMPILER_VERSION STREQUAL "" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS "5.0")
     message(FATAL_ERROR "A c++17-compliant compiler is required, please use at least GCC 5")
   else ()
     set (CXX17_FLAGS "-std=c++17")
   endif ()
-  set (WARN_FLAGS "-Wall -Wno-unknown-pragmas -Wno-conversion")
-  if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER "12.0")
-    set (WARN_FLAGS "${WARN_FLAGS} -Wno-array-bounds -Wno-stringop-overread") # To compile protobuf in Fedora37
-  endif ()
+  set (WARN_FLAGS "-Wall -Wextra")
   if (STOP_BUILD_ON_WARNING)
     set (WARN_FLAGS "${WARN_FLAGS} -Werror")
   endif ()
@@ -169,15 +153,10 @@ elseif (MSVC)
   set (WARN_FLAGS "${WARN_FLAGS} -wd4146") # unary minus operator applied to unsigned type, result still unsigned
 endif ()
 
-if (BUILD_CPP_ENABLE_METRICS)
-  message(STATUS "Enable the metrics collection")
-  add_compile_definitions(ENABLE_METRICS=1)
-else ()
-  message(STATUS "Disable the metrics collection")
-  add_compile_definitions(ENABLE_METRICS=0)
-endif ()
-
 enable_testing()
+
+INCLUDE(GNUInstallDirs)  # Put it before ThirdpartyToolchain to make CMAKE_INSTALL_LIBDIR available.
+set(ORC_INSTALL_CMAKE_DIR ${CMAKE_INSTALL_LIBDIR}/cmake/orc)
 
 INCLUDE(CheckSourceCompiles)
 INCLUDE(ThirdpartyToolchain)
@@ -227,3 +206,5 @@ if (BUILD_CPP_TESTS)
     )
   endif ()
 endif ()
+
+INCLUDE(CheckFormat)

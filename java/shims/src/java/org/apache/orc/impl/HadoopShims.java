@@ -103,8 +103,18 @@ public interface HadoopShims {
     /**
      * Release a ByteBuffer obtained from a readBuffer on this
      * ZeroCopyReaderShim.
+     *
+     * @deprecated Use {@link #releaseAllBuffers()} instead. This method was
+     * incorrectly used by upper level code and shouldn't be used anymore.
      */
+    @Deprecated
     void releaseBuffer(ByteBuffer buffer);
+
+    /**
+     * Release all ByteBuffers obtained from readBuffer on this
+     * ZeroCopyReaderShim.
+     */
+    void releaseAllBuffers();
 
     /**
      * Close the underlying stream.
@@ -120,6 +130,15 @@ public interface HadoopShims {
    * @return was a variable length block created?
    */
   boolean endVariableLengthBlock(OutputStream output) throws IOException;
+
+  default boolean supportVectoredIO(String version) {
+    // HADOOP-18103 is available since Apache Hadoop 3.3.5+
+    String[] versionParts = version.split("[.-]");
+    int major = Integer.parseInt(versionParts[0]);
+    int minor = Integer.parseInt(versionParts[1]);
+    int patch = Integer.parseInt(versionParts[2]);
+    return major == 3 && (minor > 3 || (minor == 3 && patch > 4));
+  }
 
   /**
    * The known KeyProviders for column encryption.
