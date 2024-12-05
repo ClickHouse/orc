@@ -72,6 +72,12 @@ namespace orc {
     RangeCacheEntry(const ReadRange& range, BufferPtr buffer, std::future<void> future)
         : range(range), buffer(std::move(buffer)), future(std::move(future).share()) {}
 
+    ~RangeCacheEntry() {
+      if (future.valid()) {
+        future.get();
+      }
+    }
+
     friend bool operator<(const RangeCacheEntry& left, const RangeCacheEntry& right) {
       return left.range.offset < right.range.offset;
     }
