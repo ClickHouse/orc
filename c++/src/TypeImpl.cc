@@ -518,7 +518,20 @@ namespace orc {
   }
 
   std::string printProtobufMessage(const google::protobuf::Message& message);
-  std::unique_ptr<Type> convertType(const proto::Type& type, const proto::Footer& footer) {
+  // Bound the recursion over the (file-controlled) type tree. The footer describes the schema as a
+  // tree of LIST/MAP/UNION/STRUCT types nested arbitrarily deep; a crafted deeply nested schema
+  // would overflow the native stack here, and later in assignIds()/buildTypeNameIdMap() which walk
+  // the same tree. The limit is far above any legitimate schema.
+  static const uint64_t MAX_TYPE_NESTING_DEPTH = 2000;
+
+  std::unique_ptr<Type> convertType(const proto::Type& type, const proto::Footer& footer,
+                                    uint64_t depth) {
+    if (depth > MAX_TYPE_NESTING_DEPTH) {
+      std::stringstream msg;
+      msg << "Footer is corrupt: type nesting depth exceeds the limit of " << MAX_TYPE_NESTING_DEPTH;
+      throw ParseError(msg.str());
+    }
+
     std::unique_ptr<Type> ret;
     switch (static_cast<int64_t>(type.kind())) {
       case proto::Type_Kind_BOOLEAN:
@@ -566,7 +579,8 @@ namespace orc {
         if (type.kind() == proto::Type_Kind_UNION && type.subtypes_size() == 0)
           throw ParseError("Illegal UNION type that doesn't contain any subtypes");
         for (int i = 0; i < type.subtypes_size(); ++i) {
-          ret->addUnionChild(convertType(footer.types(static_cast<int>(type.subtypes(i))), footer));
+          ret->addUnionChild(
+              convertType(footer.types(static_cast<int>(type.subtypes(i))), footer, depth + 1));
         }
         break;
       }
@@ -578,7 +592,7 @@ namespace orc {
         for (int i = 0; i < type.subtypes_size(); ++i) {
           ret->addStructField(
               type.field_names(i),
-              convertType(footer.types(static_cast<int>(type.subtypes(i))), footer));
+              convertType(footer.types(static_cast<int>(type.subtypes(i))), footer, depth + 1));
         }
         break;
       }

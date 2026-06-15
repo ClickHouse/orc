@@ -213,7 +213,8 @@ namespace orc {
                                                size_t start, size_t end);
   };
 
-  std::unique_ptr<Type> convertType(const proto::Type& type, const proto::Footer& footer);
+  std::unique_ptr<Type> convertType(const proto::Type& type, const proto::Footer& footer,
+                                     uint64_t depth = 0);
 
   /**
    * Build a clone of the file type, projecting columns from the selected
