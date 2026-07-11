@@ -1238,7 +1238,15 @@ namespace orc {
       uint64_t chunk = std::min(numValues - lengthsRead, BUFFER_SIZE);
       rle_->next(buffer, chunk, nullptr);
       for (size_t i = 0; i < chunk; ++i) {
-        counts[static_cast<size_t>(buffer[i])] += 1;
+        // The tag stream is file-controlled; reject an out-of-range tag rather than indexing
+        // childrenCounts_ out of bounds (see nextInternal).
+        size_t tag = static_cast<size_t>(static_cast<unsigned char>(buffer[i]));
+        if (tag >= numChildren_) {
+          throw ParseError("Corrupt ORC file: union tag " + std::to_string(tag) +
+                           " is out of range for union with " + std::to_string(numChildren_) +
+                           " children");
+        }
+        counts[tag] += 1;
       }
       lengthsRead += chunk;
     }
@@ -1270,6 +1278,17 @@ namespace orc {
     unsigned char* tags = unionBatch.tags.data();
     notNull = unionBatch.hasNulls ? unionBatch.notNull.data() : nullptr;
     rle_->next(reinterpret_cast<char*>(tags), numValues, notNull);
+    // The tag stream is file-controlled: a corrupt file can contain a tag that is out of range for
+    // the union's children, which would index childrenCounts_ (and children below) out of bounds.
+    // Reject such a file instead of reading/writing out of bounds.
+    for (size_t i = 0; i < numValues; ++i) {
+      if ((!notNull || notNull[i]) && static_cast<size_t>(tags[i]) >= numChildren_) {
+        throw ParseError("Corrupt ORC file: union tag " +
+                         std::to_string(static_cast<size_t>(tags[i])) +
+                         " is out of range for union with " + std::to_string(numChildren_) +
+                         " children");
+      }
+    }
     // set the offsets for each row
     if (notNull) {
       for (size_t i = 0; i < numValues; ++i) {
