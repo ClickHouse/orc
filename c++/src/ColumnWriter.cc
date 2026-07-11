@@ -2598,6 +2598,12 @@ namespace orc {
     std::vector<uint64_t> childLength(children_.size(), 0);
 
     for (uint64_t i = 0; i != numValues; ++i) {
+      // Null rows carry no meaningful tag or offset (the reader leaves them unset as well),
+      // so they must not contribute to the children's ranges: counting them would make the
+      // child writers consume rows past the end of the data filled into the child batches.
+      if (notNull && !notNull[i]) {
+        continue;
+      }
       if (childOffset[tags[i]] == -1) {
         childOffset[tags[i]] = static_cast<int64_t>(offsets[i]);
       }
