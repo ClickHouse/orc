@@ -19,6 +19,8 @@
 #ifndef ORC_STRIPE_STREAM_HH
 #define ORC_STRIPE_STREAM_HH
 
+#include <sstream>
+
 #include "orc/Int128.hh"
 #include "orc/OrcFile.hh"
 #include "orc/Reader.hh"
@@ -142,6 +144,19 @@ namespace orc {
     ReaderMetrics* metrics_;
     void ensureStripeFooterLoaded() const;
 
+    // A corrupt or truncated file can declare more columns in the file type tree than there are
+    // ColumnEncoding entries in the stripe footer. Indexing the footer with such a column id would
+    // hit an out-of-range protobuf access and abort the process, so reject it with a ParseError.
+    void checkColumnEncodingId(uint64_t colId) const {
+      const auto columnCount = static_cast<uint64_t>(stripeFooter_->columns_size());
+      if (colId >= columnCount) {
+        std::stringstream msg;
+        msg << "Column id " << colId << " is out of range: the stripe footer has " << columnCount
+            << " column encodings";
+        throw ParseError(msg.str());
+      }
+    }
+
    public:
     StripeInformationImpl(uint64_t offset, uint64_t indexLength, uint64_t dataLength,
                           uint64_t footerLength, uint64_t numRows, InputStream* stream,
@@ -196,12 +211,14 @@ namespace orc {
 
     ColumnEncodingKind getColumnEncoding(uint64_t colId) const override {
       ensureStripeFooterLoaded();
+      checkColumnEncodingId(colId);
       return static_cast<ColumnEncodingKind>(
           stripeFooter_->columns(static_cast<int>(colId)).kind());
     }
 
     uint64_t getDictionarySize(uint64_t colId) const override {
       ensureStripeFooterLoaded();
+      checkColumnEncodingId(colId);
       return static_cast<ColumnEncodingKind>(
           stripeFooter_->columns(static_cast<int>(colId)).dictionary_size());
     }
