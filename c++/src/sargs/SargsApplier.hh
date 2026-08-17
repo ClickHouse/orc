@@ -74,11 +74,15 @@ namespace orc {
     /**
      * TODO: use proto::RowIndex and proto::BloomFilter to do the evaluation
      * Pick the row groups that we need to load from the current stripe.
+     * @param callerSelection optional per-row-group keep flags contributed by the caller
+     *        (RowReaderOptions::rowGroupFilter), intersected with the search argument
+     *        evaluation. Ignored when null or of a size other than the row group count.
      * @return true if any row group is selected
      */
     bool pickRowGroups(uint64_t rowsInStripe,
                        const std::unordered_map<uint64_t, proto::RowIndex>& rowIndexes,
-                       const std::map<uint32_t, BloomFilterIndex>& bloomFilters);
+                       const std::map<uint32_t, BloomFilterIndex>& bloomFilters,
+                       const std::vector<bool>* callerSelection = nullptr);
 
     /**
      * Return a vector of the next skipped row for each RowGroup. Each value is the row id
