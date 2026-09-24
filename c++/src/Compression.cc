@@ -1313,9 +1313,12 @@ namespace orc {
         return std::make_unique<ZSTDDecompressionStream>(std::move(input), blockSize, pool,
                                                          metrics);
       default: {
+        // The codec is read from the file's postscript, so an unknown value is untrusted input
+        // rather than an internal error. NotImplementedYet derives from std::logic_error, which a
+        // caller may treat as a failed assertion and abort on, so reject it with a runtime_error.
         std::ostringstream buffer;
         buffer << "Unknown compression codec " << kind;
-        throw NotImplementedYet(buffer.str());
+        throw CompressionError(buffer.str());
       }
     }
   }
