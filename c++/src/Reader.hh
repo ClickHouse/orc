@@ -186,6 +186,8 @@ namespace orc {
     std::map<uint32_t, BloomFilterIndex> bloomFilterIndex_;
     std::shared_ptr<SearchArgument> sargs_;
     std::unique_ptr<SargsApplier> sargsApplier_;
+    // caller-supplied row group selection, intersected with the sargs evaluation
+    RowGroupFilter rowGroupFilter_;
 
     // desired timezone to return data of timestamp types.
     const Timezone& readerTimezone_;
@@ -198,6 +200,9 @@ namespace orc {
 
     // load stripe index if not done so
     void loadStripeIndex();
+
+    // run the caller's row group filter over the already-loaded row index of the current stripe
+    std::vector<bool> evaluateRowGroupFilter();
 
     // In case of PPD, batch size should be aware of row group boundaries.
     // If only a subset of row groups are selected then the next read should

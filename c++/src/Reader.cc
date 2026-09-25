@@ -369,6 +369,8 @@ namespace orc {
           *contents_->schema, sargs_.get(), footer_->row_index_stride(),
           getWriterVersionImpl(contents.get()), opts.getDictionaryFilteringSizeThreshold(),
           contents_->readerMetrics, &schemaEvolution_);
+      // The filter narrows the sargs selection, so it needs that applier to exist.
+      rowGroupFilter_ = opts.getRowGroupFilter();
     }
 
     skipBloomFilters_ = hasBadBloomFilters();
@@ -494,6 +496,38 @@ namespace orc {
     if (rowsToSkip > 0) {
       reader_->skip(rowsToSkip);
     }
+  }
+
+  std::vector<bool> RowReaderImpl::evaluateRowGroupFilter() {
+    uint64_t rowIndexStride = footer_->row_index_stride();
+    uint64_t numRowGroups = (rowsInCurrentStripe_ + rowIndexStride - 1) / rowIndexStride;
+
+    const Timezone& writerTimezone = currentStripeFooter_.has_writer_timezone()
+                                        ? getTimezoneByName(currentStripeFooter_.writer_timezone())
+                                        : getLocalTimezone();
+    StatContext statContext(
+        !WriterVersionImpl::VERSION_HIVE_8732().compareGT(getWriterVersionImpl(contents_.get())),
+        &writerTimezone);
+
+    // The wrappers are cached so that a filter reading one column across all row groups does
+    // not re-convert, and so that the pointers it receives stay valid for the whole call.
+    std::map<std::pair<uint64_t, uint64_t>, std::unique_ptr<ColumnStatistics>> converted;
+    auto accessor = [&](uint64_t columnId, uint64_t rowGroup) -> const ColumnStatistics* {
+      auto key = std::make_pair(columnId, rowGroup);
+      auto cached = converted.find(key);
+      if (cached != converted.end()) return cached->second.get();
+
+      auto rowIndex = rowIndexes_.find(columnId);
+      if (rowIndex == rowIndexes_.cend() ||
+          static_cast<int>(rowGroup) >= rowIndex->second.entry_size()) {
+        return nullptr;
+      }
+      std::unique_ptr<ColumnStatistics> stats(convertColumnStatistics(
+          rowIndex->second.entry(static_cast<int>(rowGroup)).statistics(), statContext));
+      return converted.emplace(key, std::move(stats)).first->second.get();
+    };
+
+    return rowGroupFilter_(numRowGroups, accessor);
   }
 
   void RowReaderImpl::loadStripeIndex() {
@@ -1295,8 +1329,15 @@ namespace orc {
           // read row group statistics and bloom filters of current stripe
           loadStripeIndex();
 
+          // ask the caller for its own row group selection, if it installed a filter
+          std::vector<bool> callerSelection;
+          if (rowGroupFilter_) {
+            callerSelection = evaluateRowGroupFilter();
+          }
+
           // select row groups to read in the current stripe
-          sargsApplier_->pickRowGroups(rowsInCurrentStripe_, rowIndexes_, bloomFilterIndex_);
+          sargsApplier_->pickRowGroups(rowsInCurrentStripe_, rowIndexes_, bloomFilterIndex_,
+                                       rowGroupFilter_ ? &callerSelection : nullptr);
           if (sargsApplier_->hasSelectedFrom(currentRowInStripe_)) {
             // current stripe has at least one row group matching the predicate
             break;

@@ -20,6 +20,7 @@
 #include "Dictionary.hh"
 #include "sargs/PredicateLeaf.hh"
 
+#include <algorithm>
 #include <numeric>
 #include <set>
 
@@ -81,14 +82,28 @@ namespace orc {
 
   bool SargsApplier::pickRowGroups(uint64_t rowsInStripe,
                                    const std::unordered_map<uint64_t, proto::RowIndex>& rowIndexes,
-                                   const std::map<uint32_t, BloomFilterIndex>& bloomFilters) {
+                                   const std::map<uint32_t, BloomFilterIndex>& bloomFilters,
+                                   const std::vector<bool>* callerSelection) {
     // init state of each row group
     uint64_t groupsInStripe = (rowsInStripe + rowIndexStride_ - 1) / rowIndexStride_;
     nextSkippedRows_.resize(groupsInStripe);
     totalRowsInStripe_ = rowsInStripe;
 
+    // A selection of a different size cannot be matched to row groups; ignore it.
+    if (callerSelection != nullptr && callerSelection->size() != groupsInStripe) {
+      callerSelection = nullptr;
+    }
+
     // row indexes do not exist, simply read all rows
     if (rowIndexes.empty()) {
+      // With a caller selection installed the schedule must say "keep everything" explicitly:
+      // no statistics are available to evaluate it against, and an all-zero vector reads as
+      // "everything skipped" in hasSelectedFrom() and computeBatchSize().
+      if (callerSelection != nullptr) {
+        std::fill(nextSkippedRows_.begin(), nextSkippedRows_.end(), rowsInStripe);
+        hasSelected_ = groupsInStripe > 0;
+        hasSkipped_ = false;
+      }
       return true;
     }
 
@@ -125,7 +140,11 @@ namespace orc {
         }
       }
 
-      bool needed = isNeeded(searchArgument_->evaluate(leafValues));
+      // The caller's keep bit has to participate here, not in a later pass over
+      // nextSkippedRows_: that vector encodes the END of each selected run, so zeroing an
+      // entry afterwards would leave the preceding run's marker spanning the skipped group.
+      bool needed = isNeeded(searchArgument_->evaluate(leafValues)) &&
+                    (callerSelection == nullptr || (*callerSelection)[rowGroup]);
       if (!needed) {
         nextSkippedRows_[rowGroup] = 0;
         nextSkippedRowGroup = rowGroup;

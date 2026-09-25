@@ -28,6 +28,7 @@
 #include "orc/sargs/SearchArgument.hh"
 
 #include <atomic>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -84,6 +85,17 @@ namespace orc {
     // among all row groups.
     std::vector<std::vector<uint64_t>> positions;
   };
+
+  // Returns the statistics of one row group of one column, or nullptr when that column has no
+  // row index in the current stripe. The returned object is owned by the reader and is only
+  // valid for the duration of the RowGroupFilter call.
+  using RowGroupStatisticsAccessor =
+      std::function<const ColumnStatistics*(uint64_t columnId, uint64_t rowGroup)>;
+
+  // Caller-supplied row group selection, intersected with the reader's own search argument
+  // evaluation. See RowReaderOptions::rowGroupFilter.
+  using RowGroupFilter =
+      std::function<std::vector<bool>(uint64_t numRowGroups, const RowGroupStatisticsAccessor&)>;
 
   /**
    * Options for creating a Reader.
@@ -282,6 +294,26 @@ namespace orc {
      * Set search argument for predicate push down
      */
     RowReaderOptions& searchArgument(std::shared_ptr<SearchArgument> sargs);
+
+    /**
+     * Set a callback that contributes an additional row group selection, evaluated by the
+     * caller against the row group statistics this reader has already loaded.
+     *
+     * The callback receives the number of row groups in the stripe and an accessor returning
+     * the statistics of a (column id, row group) pair, or nullptr when the column has no row
+     * index in this stripe. It returns one keep flag per row group; a vector of a different
+     * size is treated as all-keep.
+     *
+     * The result is intersected with this reader's own search argument evaluation, so the
+     * callback can only ever narrow the selection. Without a callback the reader behaves
+     * exactly as before.
+     */
+    RowReaderOptions& rowGroupFilter(RowGroupFilter filter);
+
+    /**
+     * Get the row group filter callback, empty if none was set.
+     */
+    const RowGroupFilter& getRowGroupFilter() const;
 
     /**
      * Should enable encoding block mode
