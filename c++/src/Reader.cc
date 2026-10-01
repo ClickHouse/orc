@@ -292,6 +292,14 @@ namespace orc {
         throw ParseError(msg.str());
       }
 
+      if (stream.has_kind() && stream.column() >= selectedColumns.size()) {
+        std::stringstream msg;
+        msg << "Malformed stream meta at stream index " << i << " in stripe " << stripeIndex
+            << ": column=" << stream.column() << " is out of range, the file has "
+            << selectedColumns.size() << " columns";
+        throw ParseError(msg.str());
+      }
+
       if (stream.has_kind() && selectedColumns[stream.column()]) {
         if (allowedKinds.find(stream.kind()) != allowedKinds.cend()) {
           ranges.emplace_back(offset, stream.length());
