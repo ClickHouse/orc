@@ -445,7 +445,14 @@ namespace orc {
     for (int i = 0; i < currentStripeFooter_.streams_size(); ++i) {
       const proto::Stream& pbStream = currentStripeFooter_.streams(i);
       uint64_t colId = pbStream.column();
-      if (selectedColumns_[colId] && pbStream.has_kind() &&
+      if (pbStream.has_kind() && colId >= selectedColumns_.size()) {
+        std::stringstream msg;
+        msg << "Malformed stream meta at stream index " << i << " in stripe " << currentStripe_
+            << ": column=" << colId << " is out of range, the file has " << selectedColumns_.size()
+            << " columns";
+        throw ParseError(msg.str());
+      }
+      if (pbStream.has_kind() && selectedColumns_[colId] &&
           (pbStream.kind() == proto::Stream_Kind_ROW_INDEX ||
            pbStream.kind() == proto::Stream_Kind_BLOOM_FILTER_UTF8)) {
         std::unique_ptr<SeekableInputStream> inStream = createDecompressor(
@@ -464,6 +471,14 @@ namespace orc {
           proto::BloomFilterIndex pbBFIndex;
           if (!pbBFIndex.ParseFromZeroCopyStream(inStream.get())) {
             throw ParseError("Failed to parse bloom filter index");
+          }
+          if (colId >= static_cast<uint64_t>(currentStripeFooter_.columns_size())) {
+            std::stringstream msg;
+            msg << "Malformed bloom filter stream at stream index " << i << " in stripe "
+                << currentStripe_ << ": column=" << colId
+                << " has no column encoding, the stripe has " << currentStripeFooter_.columns_size()
+                << " column encodings";
+            throw ParseError(msg.str());
           }
           BloomFilterIndex bfIndex;
           for (int j = 0; j < pbBFIndex.bloom_filter_size(); j++) {
@@ -729,6 +744,13 @@ namespace orc {
         }
         int num_entries = rowIndex.entry_size();
         size_t column = static_cast<size_t>(stream.column());
+        if (column >= indexStats->size()) {
+          std::stringstream msg;
+          msg << "Malformed RowIndex stream meta at stream index " << i << " in stripe "
+              << stripeIndex << ": column=" << column << " is out of range, the stripe has "
+              << indexStats->size() << " column statistics";
+          throw ParseError(msg.str());
+        }
         for (int j = 0; j < num_entries; j++) {
           const proto::RowIndexEntry& entry = rowIndex.entry(j);
           (*indexStats)[column].push_back(entry.statistics());
@@ -1448,6 +1470,14 @@ namespace orc {
         proto::BloomFilterIndex pbBFIndex;
         if (!pbBFIndex.ParseFromZeroCopyStream(pbStream.get())) {
           throw ParseError("Failed to parse BloomFilterIndex");
+        }
+        if (stream.column() >= static_cast<uint64_t>(currentStripeFooter.columns_size())) {
+          std::stringstream msg;
+          msg << "Malformed bloom filter stream at stream index " << i << " in stripe "
+              << stripeIndex << ": column=" << stream.column()
+              << " has no column encoding, the stripe has " << currentStripeFooter.columns_size()
+              << " column encodings";
+          throw ParseError(msg.str());
         }
 
         BloomFilterIndex bfIndex;
