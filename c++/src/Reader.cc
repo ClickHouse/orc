@@ -887,6 +887,15 @@ namespace orc {
     if (contents_->metadata == nullptr) {
       throw std::logic_error("No stripe statistics in file");
     }
+    if (contents_->metadata->stripe_stats_size() != footer_->stripes_size()) {
+      std::stringstream msg;
+      msg << "Malformed metadata: the file has " << footer_->stripes_size() << " stripes but "
+          << contents_->metadata->stripe_stats_size() << " stripe statistics";
+      throw ParseError(msg.str());
+    }
+    if (stripeIndex >= numberOfStripes_) {
+      throw std::logic_error("stripe index out of range");
+    }
 
     proto::StripeInformation currentStripeInfo = footer_->stripes(static_cast<int>(stripeIndex));
     proto::StripeFooter currentStripeFooter = getStripeFooter(currentStripeInfo, *contents_.get());
@@ -1300,8 +1309,9 @@ namespace orc {
       processingStripe_ = currentStripe_;
 
       bool isStripeNeeded = true;
-      // If PPD enabled and stripe stats existed, evaulate it first
-      if (sargsApplier_ && contents_->metadata) {
+      // If PPD enabled and the stripe stats match the stripes one to one, evaluate them first
+      if (sargsApplier_ && contents_->metadata &&
+          contents_->metadata->stripe_stats_size() == footer_->stripes_size()) {
         const auto& currentStripeStats =
             contents_->metadata->stripe_stats(static_cast<int>(currentStripe_));
         // skip this stripe after stats fail to satisfy sargs
