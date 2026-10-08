@@ -894,7 +894,7 @@ namespace orc {
       throw ParseError(msg.str());
     }
     if (stripeIndex >= numberOfStripes_) {
-      throw std::logic_error("stripe index out of range");
+      throw InvalidArgument("stripe index out of range");
     }
 
     proto::StripeInformation currentStripeInfo = footer_->stripes(static_cast<int>(stripeIndex));
