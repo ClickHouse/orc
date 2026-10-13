@@ -824,8 +824,7 @@ namespace orc {
     return value;
   }
 
-  static bool equalsAsciiCaseInsensitive(const std::string& value,
-                                         std::string::size_type start,
+  static bool equalsAsciiCaseInsensitive(const std::string& value, std::string::size_type start,
                                          std::string::size_type length, const char* expected) {
     std::string::size_type expectedLength = 0;
     while (expected[expectedLength] != '\0') {
@@ -853,8 +852,7 @@ namespace orc {
     if (baseEnd == std::string::npos || baseEnd >= componentEnd) {
       baseEnd = componentEnd;
     }
-    while (baseEnd > componentStart &&
-           (zone[baseEnd - 1] == ' ' || zone[baseEnd - 1] == '.')) {
+    while (baseEnd > componentStart && (zone[baseEnd - 1] == ' ' || zone[baseEnd - 1] == '.')) {
       --baseEnd;
     }
     const std::string::size_type baseLength = baseEnd - componentStart;
@@ -897,8 +895,7 @@ namespace orc {
       const std::string::size_type componentEnd = zone.find('/', componentStart);
       const std::string::size_type componentLength =
           (componentEnd == std::string::npos ? zone.size() : componentEnd) - componentStart;
-      if (componentLength == 0 ||
-          zone[componentStart + componentLength - 1] == '.' ||
+      if (componentLength == 0 || zone[componentStart + componentLength - 1] == '.' ||
           zone[componentStart + componentLength - 1] == ' ') {
         return false;
       }
@@ -954,8 +951,8 @@ namespace orc {
         throw TimezoneError(buffer.str());
       }
       const char* name = reinterpret_cast<const char*>(ptr) + nameOffset + nameStart;
-      const char* nameEnd = static_cast<const char*>(
-          memchr(name, '\0', static_cast<size_t>(nameCount - nameStart)));
+      const char* nameEnd =
+          static_cast<const char*>(memchr(name, '\0', static_cast<size_t>(nameCount - nameStart)));
       if (nameEnd == nullptr) {
         std::stringstream buffer;
         buffer << "timezone designation not null-terminated in variant " << variant;
