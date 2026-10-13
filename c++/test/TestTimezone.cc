@@ -388,8 +388,7 @@ namespace orc {
             testing::HasSubstr("timezone designation not null-terminated in variant 0")));
 
     const std::vector<unsigned char> terminatedBuffer = makeTimezoneBuffer(2);
-    const std::unique_ptr<Timezone> timezone =
-        getTimezone("terminated timezone", terminatedBuffer);
+    const std::unique_ptr<Timezone> timezone = getTimezone("terminated timezone", terminatedBuffer);
     EXPECT_EQ("A", getVariantFromZone(*timezone, "1970-01-01 00:00:00"));
   }
 
@@ -566,8 +565,7 @@ namespace orc {
     const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
     for (std::size_t attempt = 0; attempt < 100; ++attempt) {
       const auto candidate = std::filesystem::temp_directory_path() /
-                             (prefix + std::to_string(timestamp) + "_" +
-                              std::to_string(attempt));
+                             (prefix + std::to_string(timestamp) + "_" + std::to_string(attempt));
       std::error_code error;
       if (std::filesystem::create_directory(candidate, error)) {
         return candidate;
@@ -634,9 +632,9 @@ namespace orc {
     const Timezone* timezone = nullptr;
     EXPECT_NO_THROW(timezone = &getTimezoneByName("../sentinel"));
     ASSERT_NE(nullptr, timezone);
-    EXPECT_THAT([timezone]() { timezone->getVersion(); },
-                testing::ThrowsMessage<TimezoneError>(
-                    testing::HasSubstr("Invalid time zone name")));
+    EXPECT_THAT(
+        [timezone]() { timezone->getVersion(); },
+        testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("Invalid time zone name")));
     EXPECT_NO_THROW(getTimezoneByName("Etc/GMT+1").getVersion());
     ASSERT_TRUE(tzDir.restore());
   }
@@ -666,38 +664,52 @@ namespace orc {
     const Timezone* timezone = nullptr;
     EXPECT_NO_THROW(timezone = &getTimezoneByName(zoneName));
     ASSERT_NE(nullptr, timezone);
-    EXPECT_THAT([timezone]() { timezone->getVersion(); },
-                testing::ThrowsMessage<TimezoneError>(
-                    testing::HasSubstr("Invalid time zone name")));
+    EXPECT_THAT(
+        [timezone]() { timezone->getVersion(); },
+        testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("Invalid time zone name")));
     ASSERT_TRUE(tzDir.restore());
   }
 #endif
 
   TEST(TestTimezone, testTimezoneNameRejectsPathSyntax) {
     const std::vector<std::string> invalidNames = {
-        "", ".", "..", "../sentinel", "nested/../sentinel", "nested/.", "nested/..",
-        ".. /sentinel", ".. ./sentinel",
-        "nested//sentinel", "America/Los_Angeles/", "..\\sentinel", "nested\\..\\sentinel",
-        "/etc/passwd", "\\etc\\passwd", "\\\\server\\share", "C:/timezone", "C:timezone",
+        "",
+        ".",
+        "..",
+        "../sentinel",
+        "nested/../sentinel",
+        "nested/.",
+        "nested/..",
+        ".. /sentinel",
+        ".. ./sentinel",
+        "nested//sentinel",
+        "America/Los_Angeles/",
+        "..\\sentinel",
+        "nested\\..\\sentinel",
+        "/etc/passwd",
+        "\\etc\\passwd",
+        "\\\\server\\share",
+        "C:/timezone",
+        "C:timezone",
         std::string("UTC\0/../sentinel", sizeof("UTC\0/../sentinel") - 1)};
 
     for (const std::string& zone : invalidNames) {
       const Timezone* timezone = nullptr;
       EXPECT_NO_THROW(timezone = &getTimezoneByName(zone)) << "zone length: " << zone.size();
       ASSERT_NE(nullptr, timezone);
-      EXPECT_THAT([timezone]() { timezone->getVersion(); },
-                  testing::ThrowsMessage<TimezoneError>(
-                      testing::HasSubstr("Invalid time zone name")))
+      EXPECT_THAT(
+          [timezone]() { timezone->getVersion(); },
+          testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("Invalid time zone name")))
           << "zone length: " << zone.size();
     }
   }
 
 #ifdef _WIN32
   TEST(TestTimezone, testWindowsReservedDeviceTimezoneNames) {
-    std::vector<std::string> reservedNames = {
-        "CON", "con", "PRN", "aux", "NUL.txt", "nul.tar.gz", "cOn .txt", "COM1",
-        "com9.log", "LPT1", "lpt9.data", "Etc/CON.txt", "CONIN$", "conout$.txt",
-        "Etc/CONIN$"};
+    std::vector<std::string> reservedNames = {"CON",      "con",         "PRN",       "aux",
+                                              "NUL.txt",  "nul.tar.gz",  "cOn .txt",  "COM1",
+                                              "com9.log", "LPT1",        "lpt9.data", "Etc/CON.txt",
+                                              "CONIN$",   "conout$.txt", "Etc/CONIN$"};
     const unsigned char superscriptDigits[] = {0xB9, 0xB2, 0xB3};
     const char* devicePrefixes[] = {"COM", "lPt"};
     for (unsigned char digit : superscriptDigits) {
@@ -718,9 +730,9 @@ namespace orc {
       const Timezone* timezone = nullptr;
       EXPECT_NO_THROW(timezone = &getTimezoneByName(zone)) << "zone length: " << zone.size();
       ASSERT_NE(nullptr, timezone);
-      EXPECT_THAT([timezone]() { timezone->getVersion(); },
-                  testing::ThrowsMessage<TimezoneError>(
-                      testing::HasSubstr("Invalid time zone name")))
+      EXPECT_THAT(
+          [timezone]() { timezone->getVersion(); },
+          testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("Invalid time zone name")))
           << "zone length: " << zone.size();
     }
   }
