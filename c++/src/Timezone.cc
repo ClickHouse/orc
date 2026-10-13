@@ -555,6 +555,9 @@ namespace orc {
 
     virtual std::string parseFutureString(const unsigned char* ptr, uint64_t offset,
                                           uint64_t length) const override {
+      if (length < 2) {
+        throw TimezoneError("TZif future string is too short");
+      }
       return std::string(reinterpret_cast<const char*>(ptr) + offset + 1, length - 2);
     }
   };
@@ -641,6 +644,9 @@ namespace orc {
 
   TimezoneImpl::TimezoneImpl(const std::string& filename, const std::vector<unsigned char>& buffer)
       : filename_(filename) {
+    if (buffer.empty()) {
+      throw TimezoneError("Time zone file " + filename_ + " is empty.");
+    }
     parseZoneFile(&buffer[0], 0, buffer.size(), Version1Parser());
     // Build the literal for the ORC epoch
     // 2015 Jan 1 00:00:00
@@ -683,6 +689,9 @@ namespace orc {
     try {
       std::unique_ptr<InputStream> file = readFile(filename);
       size_t size = static_cast<size_t>(file->getLength());
+      if (size == 0) {
+        throw TimezoneError("Time zone file " + filename + " is empty.");
+      }
       buffer.resize(size);
       file->read(&buffer[0], size, 0);
     } catch (ParseError& err) {
@@ -694,10 +703,14 @@ namespace orc {
   class LazyTimezone : public Timezone {
    private:
     std::string filename_;
+    bool valid_;
     mutable std::unique_ptr<TimezoneImpl> impl_;
     mutable std::once_flag initialized_;
 
     TimezoneImpl* getImpl() const {
+      if (!valid_) {
+        throw TimezoneError("Invalid time zone name.");
+      }
       std::call_once(initialized_, [&]() {
         auto buffer = loadTZDB(filename_);
         impl_ = std::make_unique<TimezoneImpl>(filename_, std::move(buffer));
@@ -706,7 +719,8 @@ namespace orc {
     }
 
    public:
-    LazyTimezone(const std::string& filename) : filename_(filename) {}
+    LazyTimezone(const std::string& filename, bool valid = true)
+        : filename_(filename), valid_(valid) {}
 
     const TimezoneVariant& getVariant(int64_t clk) const override {
       return getImpl()->getVariant(clk);
@@ -756,12 +770,118 @@ namespace orc {
 #endif
   }
 
+#ifdef _WIN32
+  static char lowercaseAscii(char value) {
+    if (value >= 'A' && value <= 'Z') {
+      return static_cast<char>(value - 'A' + 'a');
+    }
+    return value;
+  }
+
+  static bool equalsAsciiCaseInsensitive(const std::string& value,
+                                         std::string::size_type start,
+                                         std::string::size_type length, const char* expected) {
+    std::string::size_type expectedLength = 0;
+    while (expected[expectedLength] != '\0') {
+      ++expectedLength;
+    }
+    if (length != expectedLength) {
+      return false;
+    }
+    for (std::string::size_type i = 0; i < length; ++i) {
+      if (lowercaseAscii(value[start + i]) != expected[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  static bool isWindowsSuperscriptDigit(unsigned char value) {
+    return value == 0xB9 || value == 0xB2 || value == 0xB3;
+  }
+
+  static bool isWindowsReservedDeviceName(const std::string& zone,
+                                          std::string::size_type componentStart,
+                                          std::string::size_type componentEnd) {
+    std::string::size_type baseEnd = zone.find('.', componentStart);
+    if (baseEnd == std::string::npos || baseEnd >= componentEnd) {
+      baseEnd = componentEnd;
+    }
+    while (baseEnd > componentStart &&
+           (zone[baseEnd - 1] == ' ' || zone[baseEnd - 1] == '.')) {
+      --baseEnd;
+    }
+    const std::string::size_type baseLength = baseEnd - componentStart;
+    if (equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "con") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "conin$") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "conout$") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "prn") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "aux") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "nul")) {
+      return true;
+    }
+
+    if (baseLength != 4 && baseLength != 5) {
+      return false;
+    }
+    if (!equalsAsciiCaseInsensitive(zone, componentStart, 3, "com") &&
+        !equalsAsciiCaseInsensitive(zone, componentStart, 3, "lpt")) {
+      return false;
+    }
+
+    const unsigned char suffix = static_cast<unsigned char>(zone[componentStart + 3]);
+    if (baseLength == 4) {
+      return (suffix >= '1' && suffix <= '9') || isWindowsSuperscriptDigit(suffix);
+    }
+
+    return suffix == 0xC2 &&
+           isWindowsSuperscriptDigit(static_cast<unsigned char>(zone[componentStart + 4]));
+  }
+#endif
+
+  static bool hasSafeTimezoneNamePathSyntax(const std::string& zone) {
+    if (zone.empty() || zone.find('\0') != std::string::npos ||
+        zone.find('\\') != std::string::npos || zone.find(':') != std::string::npos ||
+        zone[0] == '/') {
+      return false;
+    }
+
+    std::string::size_type componentStart = 0;
+    while (componentStart <= zone.size()) {
+      const std::string::size_type componentEnd = zone.find('/', componentStart);
+      const std::string::size_type componentLength =
+          (componentEnd == std::string::npos ? zone.size() : componentEnd) - componentStart;
+      if (componentLength == 0 || zone[componentStart + componentLength - 1] == '.' ||
+          zone[componentStart + componentLength - 1] == ' ') {
+        return false;
+      }
+#ifdef _WIN32
+      if (isWindowsReservedDeviceName(zone, componentStart, componentStart + componentLength)) {
+        return false;
+      }
+#endif
+      if (componentEnd == std::string::npos) {
+        break;
+      }
+      componentStart = componentEnd + 1;
+    }
+    return true;
+  }
+
   /**
    * Get a timezone by name (eg. America/Los_Angeles).
    * Results are cached.
    */
   const Timezone& getTimezoneByName(const std::string& zone) {
-    std::string filename(getTimezoneDirectory());
+    static LazyTimezone invalidTimezone("", false);
+    if (!hasSafeTimezoneNamePathSyntax(zone)) {
+      return invalidTimezone;
+    }
+    const std::string directory = getTimezoneDirectory();
+    if (directory.empty()) {
+      return invalidTimezone;
+    }
+    std::string filename(directory);
     filename += "/";
     filename += zone;
     return getTimezoneByFilename(filename);
@@ -793,8 +913,15 @@ namespace orc {
                << " >= " << nameCount;
         throw TimezoneError(buffer.str());
       }
-      variants_[variant].name =
-          std::string(reinterpret_cast<const char*>(ptr) + nameOffset + nameStart);
+      const char* name = reinterpret_cast<const char*>(ptr) + nameOffset + nameStart;
+      const char* nameEnd = static_cast<const char*>(
+          memchr(name, '\0', static_cast<size_t>(nameCount - nameStart)));
+      if (nameEnd == nullptr) {
+        std::stringstream buffer;
+        buffer << "timezone designation not null-terminated in variant " << variant;
+        throw TimezoneError(buffer.str());
+      }
+      variants_[variant].name.assign(name, nameEnd);
     }
   }
 
@@ -843,6 +970,12 @@ namespace orc {
     const uint64_t timeCount = decode32(ptr + headerOffset + 12);
     const uint64_t variantCount = decode32(ptr + headerOffset + 16);
     const uint64_t nameCount = decode32(ptr + headerOffset + 20);
+
+    if (variantCount == 0) {
+      std::stringstream buffer;
+      buffer << "tzfile has no variants " << filename_;
+      throw TimezoneError(buffer.str());
+    }
 
     const uint64_t timeOffset = headerOffset + 24;
     const uint64_t timeVariantOffset = timeOffset + versionParser.getTimeSize() * timeCount;

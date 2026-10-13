@@ -22,8 +22,12 @@
 #include "wrap/gtest-wrapper.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
+#include <system_error>
 #include <vector>
 
 namespace orc {
@@ -344,6 +348,88 @@ namespace orc {
     EXPECT_EQ("PDT", getVariantFromZone(*la, "2100-03-14 10:00:00"));
   }
 
+  TEST(TestTimezone, testEmptyTimezoneBuffer) {
+    const std::vector<unsigned char> emptyBuffer;
+    EXPECT_THAT([&emptyBuffer]() { getTimezone("empty timezone", emptyBuffer); },
+                testing::ThrowsMessage<TimezoneError>(
+                    testing::HasSubstr("Time zone file empty timezone is empty.")));
+  }
+
+  TEST(TestTimezone, testZeroVariantTimezoneHeader) {
+    std::vector<unsigned char> zeroVariantBuffer(44, 0);
+    zeroVariantBuffer[0] = 'T';
+    zeroVariantBuffer[1] = 'Z';
+    zeroVariantBuffer[2] = 'i';
+    zeroVariantBuffer[3] = 'f';
+
+    EXPECT_THAT([&zeroVariantBuffer]() { getTimezone("zero variant timezone", zeroVariantBuffer); },
+                testing::ThrowsMessage<TimezoneError>(
+                    testing::HasSubstr("tzfile has no variants zero variant timezone")));
+  }
+
+  TEST(TestTimezone, testTimezoneDesignationTermination) {
+    auto makeTimezoneBuffer = [](unsigned char nameCount) {
+      std::vector<unsigned char> buffer(50 + nameCount, 0);
+      buffer[0] = 'T';
+      buffer[1] = 'Z';
+      buffer[2] = 'i';
+      buffer[3] = 'f';
+      buffer[39] = 1;
+      buffer[43] = nameCount;
+      buffer[50] = 'A';
+      return buffer;
+    };
+
+    const std::vector<unsigned char> unterminatedBuffer = makeTimezoneBuffer(1);
+    ASSERT_EQ(std::size_t{51}, unterminatedBuffer.size());
+    EXPECT_THAT(
+        [&unterminatedBuffer]() { getTimezone("unterminated timezone", unterminatedBuffer); },
+        testing::ThrowsMessage<TimezoneError>(
+            testing::HasSubstr("timezone designation not null-terminated in variant 0")));
+
+    const std::vector<unsigned char> terminatedBuffer = makeTimezoneBuffer(2);
+    const std::unique_ptr<Timezone> timezone =
+        getTimezone("terminated timezone", terminatedBuffer);
+    EXPECT_EQ("A", getVariantFromZone(*timezone, "1970-01-01 00:00:00"));
+  }
+
+  TEST(TestTimezone, testShortTzifV2FutureString) {
+    const auto makeTimezoneBuffer = [](const std::string& futureString) {
+      constexpr std::size_t sectionLength = 52;
+      const std::size_t futureStringOffset = 2 * sectionLength;
+      std::vector<unsigned char> buffer(futureStringOffset + futureString.size(), 0);
+
+      for (std::size_t sectionOffset = 0; sectionOffset < futureStringOffset;
+           sectionOffset += sectionLength) {
+        buffer[sectionOffset] = 'T';
+        buffer[sectionOffset + 1] = 'Z';
+        buffer[sectionOffset + 2] = 'i';
+        buffer[sectionOffset + 3] = 'f';
+        buffer[sectionOffset + 4] = '2';
+        buffer[sectionOffset + 39] = 1;
+        buffer[sectionOffset + 43] = 2;
+        buffer[sectionOffset + 50] = 'A';
+      }
+
+      std::copy(futureString.begin(), futureString.end(), buffer.begin() + futureStringOffset);
+      return buffer;
+    };
+
+    for (std::size_t futureStringLength = 0; futureStringLength < 2; ++futureStringLength) {
+      const std::vector<unsigned char> buffer =
+          makeTimezoneBuffer(std::string(futureStringLength, '\n'));
+      EXPECT_THAT(
+          [&buffer]() { getTimezone("short TZif v2 future string", buffer); },
+          testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("future string is too short")))
+          << "future string length: " << futureStringLength;
+    }
+
+    const std::vector<unsigned char> minimumBuffer = makeTimezoneBuffer("\n\n");
+    const std::unique_ptr<Timezone> timezone =
+        getTimezone("minimum TZif v2 future string", minimumBuffer);
+    EXPECT_EQ(2, timezone->getVersion());
+  }
+
   TEST(TestTimezone, testZoneCache) {
     const Timezone* la1 = &getTimezoneByName("America/Los_Angeles");
     const Timezone* ny1 = &getTimezoneByName("America/New_York");
@@ -420,6 +506,225 @@ namespace orc {
     return unsetenv(name) == 0;
 #endif
   }
+
+  class ScopedEnvironmentVariable {
+   public:
+    explicit ScopedEnvironmentVariable(const std::string& name) : name_(name) {
+      const char* value = std::getenv(name_.c_str());
+      hadValue_ = value != nullptr;
+      if (hadValue_) {
+        value_ = value;
+      }
+    }
+
+    ~ScopedEnvironmentVariable() {
+      restore();
+    }
+
+    ScopedEnvironmentVariable(const ScopedEnvironmentVariable&) = delete;
+    ScopedEnvironmentVariable& operator=(const ScopedEnvironmentVariable&) = delete;
+
+    bool set(const std::string& value) {
+      return setEnv(name_.c_str(), value.c_str());
+    }
+
+    bool restore() {
+      if (restored_) {
+        return true;
+      }
+      const bool succeeded =
+          hadValue_ ? setEnv(name_.c_str(), value_.c_str()) : delEnv(name_.c_str());
+      restored_ = succeeded;
+      return succeeded;
+    }
+
+   private:
+    std::string name_;
+    std::string value_;
+    bool hadValue_ = false;
+    bool restored_ = false;
+  };
+
+  class ScopedTestDirectory {
+   public:
+    explicit ScopedTestDirectory(const std::filesystem::path& path) : path_(path) {}
+
+    ~ScopedTestDirectory() {
+      std::error_code error;
+      std::filesystem::remove_all(path_, error);
+    }
+
+    const std::filesystem::path& getPath() const {
+      return path_;
+    }
+
+   private:
+    std::filesystem::path path_;
+  };
+
+  std::filesystem::path createUniqueTestDirectory(const std::string& prefix) {
+    const auto timestamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    for (std::size_t attempt = 0; attempt < 100; ++attempt) {
+      const auto candidate = std::filesystem::temp_directory_path() /
+                             (prefix + std::to_string(timestamp) + "_" +
+                              std::to_string(attempt));
+      std::error_code error;
+      if (std::filesystem::create_directory(candidate, error)) {
+        return candidate;
+      }
+      if (error == std::errc::file_exists) {
+        continue;
+      }
+      if (error) {
+        return std::filesystem::path();
+      }
+    }
+    return std::filesystem::path();
+  }
+
+  TEST(TestTimezone, testEmptyTzdbFile) {
+    ScopedTestDirectory testDirectory(createUniqueTestDirectory("orc_empty_tzdb_"));
+    ASSERT_FALSE(testDirectory.getPath().empty())
+        << "failed to create a unique temporary directory";
+
+    const std::string zoneName = "empty_timezone";
+    const std::filesystem::path filePath = testDirectory.getPath() / zoneName;
+    const std::string filename = testDirectory.getPath().string() + "/" + zoneName;
+    std::ofstream emptyFile(filePath, std::ios::binary);
+    ASSERT_TRUE(emptyFile.is_open());
+    emptyFile.close();
+    ASSERT_TRUE(emptyFile.good());
+
+    const Timezone* timezone = nullptr;
+    ScopedEnvironmentVariable tzDir("TZDIR");
+    ASSERT_TRUE(tzDir.set(testDirectory.getPath().string()));
+    // The lookup is lazy. Restore TZDIR before getVersion(), which loads the cached path.
+    EXPECT_NO_THROW(timezone = &getTimezoneByName(zoneName));
+    ASSERT_TRUE(tzDir.restore());
+    ASSERT_NE(nullptr, timezone);
+
+    EXPECT_THAT([timezone]() { timezone->getVersion(); },
+                testing::ThrowsMessage<TimezoneError>(testing::HasSubstr(filename + " is empty.")));
+  }
+
+  TEST(TestTimezone, testTimezoneNameRejectsTraversalAndAcceptsIanaPath) {
+    ScopedTestDirectory testDirectory(createUniqueTestDirectory("orc_timezone_path_"));
+    ASSERT_FALSE(testDirectory.getPath().empty())
+        << "failed to create a unique temporary directory";
+
+    const std::filesystem::path tzdbDirectory = testDirectory.getPath() / "zoneinfo";
+    ASSERT_TRUE(std::filesystem::create_directory(tzdbDirectory));
+    const std::filesystem::path sentinelPath = testDirectory.getPath() / "sentinel";
+    const std::vector<unsigned char> sentinel = decodeBase64(LA_VER1);
+    std::ofstream sentinelFile(sentinelPath, std::ios::binary);
+    ASSERT_TRUE(sentinelFile.is_open());
+    sentinelFile.write(reinterpret_cast<const char*>(sentinel.data()),
+                       static_cast<std::streamsize>(sentinel.size()));
+    sentinelFile.close();
+    ASSERT_TRUE(sentinelFile.good());
+
+    const std::filesystem::path etcDirectory = tzdbDirectory / "Etc";
+    ASSERT_TRUE(std::filesystem::create_directory(etcDirectory));
+    std::error_code fileError;
+    ASSERT_TRUE(std::filesystem::copy_file(sentinelPath, etcDirectory / "GMT+1", fileError))
+        << fileError.message();
+
+    ScopedEnvironmentVariable tzDir("TZDIR");
+    ASSERT_TRUE(tzDir.set(tzdbDirectory.string()));
+    const Timezone* timezone = nullptr;
+    EXPECT_NO_THROW(timezone = &getTimezoneByName("../sentinel"));
+    ASSERT_NE(nullptr, timezone);
+    EXPECT_THAT([timezone]() { timezone->getVersion(); },
+                testing::ThrowsMessage<TimezoneError>(
+                    testing::HasSubstr("Invalid time zone name")));
+    EXPECT_NO_THROW(getTimezoneByName("Etc/GMT+1").getVersion());
+    ASSERT_TRUE(tzDir.restore());
+  }
+
+#ifndef _MSC_VER
+  TEST(TestTimezone, testEmptyTimezoneDirectoryDoesNotOpenAbsolutePath) {
+    ScopedTestDirectory testDirectory(createUniqueTestDirectory("orc_empty_tzdir_"));
+    ASSERT_FALSE(testDirectory.getPath().empty())
+        << "failed to create a unique temporary directory";
+
+    const std::filesystem::path sentinelPath = testDirectory.getPath() / "sentinel";
+    const std::vector<unsigned char> sentinel = decodeBase64(LA_VER1);
+    std::ofstream sentinelFile(sentinelPath, std::ios::binary);
+    ASSERT_TRUE(sentinelFile.is_open());
+    sentinelFile.write(reinterpret_cast<const char*>(sentinel.data()),
+                       static_cast<std::streamsize>(sentinel.size()));
+    sentinelFile.close();
+    ASSERT_TRUE(sentinelFile.good());
+
+    std::string zoneName = sentinelPath.string();
+    ASSERT_FALSE(zoneName.empty());
+    ASSERT_EQ('/', zoneName[0]);
+    zoneName.erase(0, 1);
+
+    ScopedEnvironmentVariable tzDir("TZDIR");
+    ASSERT_TRUE(tzDir.set(""));
+    const Timezone* timezone = nullptr;
+    EXPECT_NO_THROW(timezone = &getTimezoneByName(zoneName));
+    ASSERT_NE(nullptr, timezone);
+    EXPECT_THAT([timezone]() { timezone->getVersion(); },
+                testing::ThrowsMessage<TimezoneError>(
+                    testing::HasSubstr("Invalid time zone name")));
+    ASSERT_TRUE(tzDir.restore());
+  }
+#endif
+
+  TEST(TestTimezone, testTimezoneNameRejectsPathSyntax) {
+    const std::vector<std::string> invalidNames = {
+        "", ".", "..", "../sentinel", "nested/../sentinel", "nested/.", "nested/..",
+        ".. /sentinel", ".. ./sentinel",
+        "nested//sentinel", "America/Los_Angeles/", "..\\sentinel", "nested\\..\\sentinel",
+        "/etc/passwd", "\\etc\\passwd", "\\\\server\\share", "C:/timezone", "C:timezone",
+        std::string("UTC\0/../sentinel", sizeof("UTC\0/../sentinel") - 1)};
+
+    for (const std::string& zone : invalidNames) {
+      const Timezone* timezone = nullptr;
+      EXPECT_NO_THROW(timezone = &getTimezoneByName(zone)) << "zone length: " << zone.size();
+      ASSERT_NE(nullptr, timezone);
+      EXPECT_THAT([timezone]() { timezone->getVersion(); },
+                  testing::ThrowsMessage<TimezoneError>(
+                      testing::HasSubstr("Invalid time zone name")))
+          << "zone length: " << zone.size();
+    }
+  }
+
+#ifdef _WIN32
+  TEST(TestTimezone, testWindowsReservedDeviceTimezoneNames) {
+    std::vector<std::string> reservedNames = {
+        "CON", "con", "PRN", "aux", "NUL.txt", "nul.tar.gz", "cOn .txt", "COM1",
+        "com9.log", "LPT1", "lpt9.data", "Etc/CON.txt", "CONIN$", "conout$.txt",
+        "Etc/CONIN$"};
+    const unsigned char superscriptDigits[] = {0xB9, 0xB2, 0xB3};
+    const char* devicePrefixes[] = {"COM", "lPt"};
+    for (unsigned char digit : superscriptDigits) {
+      for (const char* prefix : devicePrefixes) {
+        std::string singleByteName(prefix);
+        singleByteName.push_back(static_cast<char>(digit));
+        reservedNames.push_back(singleByteName);
+
+        std::string utf8Name(prefix);
+        utf8Name.push_back(static_cast<char>(0xC2));
+        utf8Name.push_back(static_cast<char>(digit));
+        utf8Name += ".txt";
+        reservedNames.push_back(utf8Name);
+      }
+    }
+
+    for (const std::string& zone : reservedNames) {
+      const Timezone* timezone = nullptr;
+      EXPECT_NO_THROW(timezone = &getTimezoneByName(zone)) << "zone length: " << zone.size();
+      ASSERT_NE(nullptr, timezone);
+      EXPECT_THAT([timezone]() { timezone->getVersion(); },
+                  testing::ThrowsMessage<TimezoneError>(
+                      testing::HasSubstr("Invalid time zone name")))
+          << "zone length: " << zone.size();
+    }
+  }
+#endif
 
   TEST(TestTimezone, testMissingTZDB) {
     const char* tzDir = std::getenv("TZDIR");
