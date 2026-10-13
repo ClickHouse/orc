@@ -391,6 +391,43 @@ namespace orc {
     EXPECT_EQ("A", getVariantFromZone(*timezone, "1970-01-01 00:00:00"));
   }
 
+  TEST(TestTimezone, testShortTzifV2FutureString) {
+    const auto makeTimezoneBuffer = [](const std::string& futureString) {
+      constexpr std::size_t sectionLength = 52;
+      const std::size_t futureStringOffset = 2 * sectionLength;
+      std::vector<unsigned char> buffer(futureStringOffset + futureString.size(), 0);
+
+      for (std::size_t sectionOffset = 0; sectionOffset < futureStringOffset;
+           sectionOffset += sectionLength) {
+        buffer[sectionOffset] = 'T';
+        buffer[sectionOffset + 1] = 'Z';
+        buffer[sectionOffset + 2] = 'i';
+        buffer[sectionOffset + 3] = 'f';
+        buffer[sectionOffset + 4] = '2';
+        buffer[sectionOffset + 39] = 1;
+        buffer[sectionOffset + 43] = 2;
+        buffer[sectionOffset + 50] = 'A';
+      }
+
+      std::copy(futureString.begin(), futureString.end(), buffer.begin() + futureStringOffset);
+      return buffer;
+    };
+
+    for (std::size_t futureStringLength = 0; futureStringLength < 2; ++futureStringLength) {
+      const std::vector<unsigned char> buffer =
+          makeTimezoneBuffer(std::string(futureStringLength, '\n'));
+      EXPECT_THAT(
+          [&buffer]() { getTimezone("short TZif v2 future string", buffer); },
+          testing::ThrowsMessage<TimezoneError>(testing::HasSubstr("future string is too short")))
+          << "future string length: " << futureStringLength;
+    }
+
+    const std::vector<unsigned char> minimumBuffer = makeTimezoneBuffer("\n\n");
+    const std::unique_ptr<Timezone> timezone =
+        getTimezone("minimum TZif v2 future string", minimumBuffer);
+    EXPECT_EQ(2, timezone->getVersion());
+  }
+
   // FIXME: Temporarily disable the test to make Windows CI happy
   // https://issues.apache.org/jira/projects/ORC/issues/ORC-1976
   TEST(TestTimezone, DISABLED_testZoneCache) {

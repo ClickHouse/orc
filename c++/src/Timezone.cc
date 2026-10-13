@@ -577,6 +577,9 @@ namespace orc {
 
     virtual std::string parseFutureString(const unsigned char* ptr, uint64_t offset,
                                           uint64_t length) const override {
+      if (length < 2) {
+        throw TimezoneError("TZif future string is too short");
+      }
       return std::string(reinterpret_cast<const char*>(ptr) + offset + 1, length - 2);
     }
   };
