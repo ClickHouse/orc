@@ -859,6 +859,8 @@ namespace orc {
     }
     const std::string::size_type baseLength = baseEnd - componentStart;
     if (equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "con") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "conin$") ||
+        equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "conout$") ||
         equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "prn") ||
         equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "aux") ||
         equalsAsciiCaseInsensitive(zone, componentStart, baseLength, "nul")) {

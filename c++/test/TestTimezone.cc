@@ -698,7 +698,7 @@ namespace orc {
     std::vector<std::string> reservedNames = {
         "CON",       "con",       "PRN",       "aux",        "NUL.txt",
         "nul.tar.gz", "cOn .txt",  "COM1",      "com9.log",   "LPT1",
-        "lpt9.data", "Etc/CON.txt"};
+        "lpt9.data", "Etc/CON.txt", "CONIN$", "conout$.txt", "Etc/CONIN$"};
     const unsigned char superscriptDigits[] = {0xB9, 0xB2, 0xB3};
     const char* devicePrefixes[] = {"COM", "lPt"};
     for (unsigned char digit : superscriptDigits) {
