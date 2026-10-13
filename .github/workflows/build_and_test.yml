@@ -30,6 +30,7 @@ on:
     - 'conan/**'
     branches:
     - branch-2.3
+    - ClickHouse/2.3.1
   workflow_call:
 
 # Cancel previous PR build and test
