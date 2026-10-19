@@ -150,6 +150,7 @@ namespace orc {
     int32_t forcedScaleOnHive11Decimal;
     bool enableLazyDecoding;
     std::shared_ptr<SearchArgument> sargs;
+    RowGroupFilter rowGroupFilter;
     std::string readerTimezone;
     RowReaderOptions::IdReadIntentMap idReadIntentMap;
     bool useTightNumericVector;
@@ -314,6 +315,15 @@ namespace orc {
 
   std::shared_ptr<SearchArgument> RowReaderOptions::getSearchArgument() const {
     return privateBits_->sargs;
+  }
+
+  RowReaderOptions& RowReaderOptions::rowGroupFilter(RowGroupFilter filter) {
+    privateBits_->rowGroupFilter = std::move(filter);
+    return *this;
+  }
+
+  const RowGroupFilter& RowReaderOptions::getRowGroupFilter() const {
+    return privateBits_->rowGroupFilter;
   }
 
   RowReaderOptions& RowReaderOptions::setTimezoneName(const std::string& zoneName) {
