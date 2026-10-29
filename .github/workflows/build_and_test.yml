@@ -24,12 +24,14 @@ on:
     - 'conan/**'
     branches:
     - branch-2.1
+    - ClickHouse/2.1.2
   pull_request:
     paths-ignore:
     - 'site/**'
     - 'conan/**'
     branches:
     - branch-2.1
+    - ClickHouse/2.1.2
 
 # Cancel previous PR build and test
 concurrency:
